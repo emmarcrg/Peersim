@@ -16,27 +16,46 @@ class Noeud:
 class DHT:
     def __init__(self, env, num_nodes):
         self.env = env
-        self.nodes = [Noeud(env, random.getrandbits(128)) for _ in range(num_nodes)]
-        self.nodes.sort(key=lambda x: x.node_id)  # Trie les nœuds par ID
-        self.initialize_neighbours()
+        self.nodes = []
+        
+        # Création initiale des nœuds
+        for _ in range(num_nodes):
+            self.add_node(random.getrandbits(128))
 
     def initialize_neighbours(self):
-        """Attribue les voisins gauche et droit de chaque nœud en anneau."""
+        """Met à jour les voisins après toute modification."""
         num_nodes = len(self.nodes)
-        if num_nodes > 1:  # On ne fait ça que s'il y a plus d'un nœud
+        if num_nodes > 1:
             for i in range(num_nodes):
                 self.nodes[i].leftNeighbour = self.nodes[i - 1]  # Voisin gauche
                 self.nodes[i].rightNeighbour = self.nodes[(i + 1) % num_nodes]  # Voisin droit (anneau)
 
-    def add_node(self):
-        """Ajoute un nœud, met à jour la DHT et réattribue les voisins."""
-        new_node = Noeud(self.env, random.getrandbits(128))
-        self.nodes.append(new_node)
-        self.nodes.sort(key=lambda x: x.node_id)  # Trie les nœuds après l'ajout
-        self.initialize_neighbours()  # Réinitialise les voisins
+    def add_node(self, node_id):
+        """Ajoute un nœud à la bonne place en parcourant les nœuds existants."""
+        new_node = Noeud(self.env, node_id)
+        
+        if not self.nodes:
+            # Premier nœud ajouté
+            self.nodes.append(new_node)
+            new_node.leftNeighbour = new_node
+            new_node.rightNeighbour = new_node
+        else:
+            # Trouver la bonne position d'insertion
+            inserted = False
+            for i in range(len(self.nodes)):
+                if self.nodes[i].node_id > node_id:
+                    self.nodes.insert(i, new_node)
+                    inserted = True
+                    break
+            
+            if not inserted:
+                # Si le nœud a le plus grand ID, on l'ajoute à la fin
+                self.nodes.append(new_node)
 
-        print(f"\nNouveau nœud ajouté : {new_node.node_id}")
-        print("Mise à jour des voisins...\n")
+            # Mise à jour des voisins après insertion
+            self.initialize_neighbours()
+
+        print(f"\nNouveau nœud ajouté : {node_id}")
         self.print_nodes()
 
     def print_nodes(self):
@@ -55,10 +74,10 @@ env = simpy.Environment()
 
 # Initialisation de la DHT avec 4 nœuds
 dht = DHT(env, 4)
-dht.print_nodes()
 
-# Ajout dynamique d'un nœud
-dht.add_node()
+# Ajout dynamique de nouveaux nœuds
+dht.add_node(random.getrandbits(128))
+dht.add_node(random.getrandbits(128))
 
 # Lancement de la simulation
 env.run(until=4)
