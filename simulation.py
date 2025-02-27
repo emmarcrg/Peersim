@@ -12,18 +12,35 @@ class Node:
         self.left_neighbor_id = None
         self.env.process(self.run())
 
-    def send_message(self, target_id, message):
+    def send_message(self, target_id, type, message):
         """Envoie un message à un autre noeud."""
         latency = random.uniform(1, 3)  # Simulation d'un délai réseau
         yield self.env.timeout(latency)
         print(f"[{self.env.now}] Noeud {self.node_id} envoie '{message}' à Noeud {target_id}")
-        self.network.deliver(self.node_id, target_id, message)  # Remettre le message au réseau
+        self.network.deliver(self.node_id, target_id, type, message)  # Remettre le message au réseau
 
-    def receive_message(self, sender_id, message):
+    def receive_message(self, sender_id, type, message):
         """Réception d'un message et réponse après traitement."""
-        print(f"[{self.env.now}] Noeud {self.node_id} reçoit '{message}' de Noeud {sender_id}")
         yield self.env.timeout(random.uniform(1, 2))  # Simulation du temps de traitement
-        self.env.process(self.send_message(sender_id, f"Réponse à '{message}'"))  # Réponse
+
+        if type == "JOIN_REQUEST":
+            self.env.process(self.find_position(sender_id))
+
+        if type == "POSITION FOUND":
+            pass
+
+        else :
+            #print(f"[{self.env.now}] Noeud {self.node_id} reçoit '{message}' de Noeud {sender_id}")
+
+            self.env.process(self.send_message(sender_id, f"Réponse à '{sender_id}', salut"))  # Réponse
+
+
+    def find_position(self, new_node_id):
+        # Vérifier si le nouvel ID est entre lui-même et son voisin droit.
+        if self.node_id < new_node_id and new_node_id < self.right_neighbor_id:
+            pass
+        
+
 
     def run(self):
         """Processus principal du noeud : envoie des messages aléatoires."""
@@ -31,6 +48,9 @@ class Node:
             yield self.env.timeout(random.uniform(3, 6))  # Pause entre deux messages
             target_id = random.choice([self.right_neighbor_id, self.left_neighbor_id])
             self.env.process(self.send_message(target_id, f"Hello from {self.node_id}"))
+
+            if self.dht == None: # Si le noeud est nouveau et donc pas dans la dht
+                pass
 
 
 class Network:
