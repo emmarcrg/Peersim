@@ -13,56 +13,98 @@ class Node:
         self.env.process(self.run())
 
     def send_message(self, target_id, type, message):
-        """Envoie un message à un autre noeud."""
+        """Envoie un message à un autre nœud."""
         latency = random.uniform(1, 3)  # Simulation d'un délai réseau
         yield self.env.timeout(latency)
         print(f"[{self.env.now}] Noeud {self.node_id} envoie '{message}' à Noeud {target_id}")
         self.network.deliver(self.node_id, target_id, type, message)  # Remettre le message au réseau
 
+
     def receive_message(self, sender_id, type, message):
         """Réception d'un message et réponse après traitement."""
         yield self.env.timeout(random.uniform(1, 2))  # Simulation du temps de traitement
-
+        print(type)
         if type == "JOIN_REQUEST":
             self.env.process(self.find_position(sender_id))
 
-        if type == "POSITION FOUND":
-            pass
+        if type == "POSITION_FOUND" and isinstance(message, list):
+            self.dht = self.network.dht  # On récupère la DHT depuis le réseau
+            self.right_neighbor_id = message[0]
+            self.left_neighbor_id = message[1]
+            print(f"[{self.env.now}] Noeud {self.node_id} s'est inséré entre {self.right_neighbor_id} et {self.left_neighbor_id}")
 
         else :
             #print(f"[{self.env.now}] Noeud {self.node_id} reçoit '{message}' de Noeud {sender_id}")
 
-            self.env.process(self.send_message(sender_id, f"Réponse à '{sender_id}', salut"))  # Réponse
+            self.env.process(self.send_message(sender_id, "NORMAL_MESSAGE", f"Réponse à '{sender_id}', salut"))  # Réponse
 
 
     def find_position(self, new_node_id):
-        # Vérifier si le nouvel ID est entre lui-même et son voisin droit.
-        if self.node_id < new_node_id and new_node_id < self.right_neighbor_id:
-            pass
+        yield self.env.timeout(1)  # Simulation d'un petit délai avant traitement
+
+        if self.node_id < new_node_id < self.right_neighbor_id:
+            # Envoie la position trouvée
+            yield self.env.process(self.send_message(new_node_id, "POSITION_FOUND", [self.right_neighbor_id, self.node_id]))
+            # Mise à jour du voisin droit
+            self.right_neighbor_id = new_node_id
+        else:
+            # Transmettre la requête au voisin droit
+            yield self.env.process(self.send_message(self.right_neighbor_id, "JOIN_REQUEST", "JOIN_REQUEST"))
+
         
-
-
     def run(self):
-        """Processus principal du noeud : envoie des messages aléatoires."""
+        """Processus principal du noeud : gère son intégration et les messages réguliers."""
+        if self.dht is None:  # Si le nœud est nouveau
+            self.is_new = True  # Marquer le nœud comme en attente d'intégration
+            yield self.env.timeout(random.uniform(1, 3))  # Délai avant de rejoindre la DHT
+            target_id = random.choice([n.node_id for n in self.network.dht])  # Sélection d’un nœud existant
+            self.env.process(self.send_message(target_id, "JOIN_REQUEST", "JOIN_REQUEST"))
+        else:
+            self.is_new = False  # Le nœud fait partie de la DHT
+
         while True:
             yield self.env.timeout(random.uniform(3, 6))  # Pause entre deux messages
-            target_id = random.choice([self.right_neighbor_id, self.left_neighbor_id])
-            self.env.process(self.send_message(target_id, f"Hello from {self.node_id}"))
 
-            if self.dht == None: # Si le noeud est nouveau et donc pas dans la dht
-                pass
+            if not self.is_new:  # Si le nœud est bien intégré
+                target_id = random.choice([self.right_neighbor_id, self.left_neighbor_id])
+                #self.env.process(self.send_message(target_id, "NORMAL_MESSAGE", f"Hello from {self.node_id}"))
 
 
+        
 class Network:
     """Gère les messages entre noeuds."""
     def __init__(self, env, dht):
         self.env = env
         self.dht = dht
 
-    def deliver(self, sender_id, target_id, message):
+    def deliver(self, sender_id, target_id, type, message):
         """Livre un message au bon noeud."""
-        target_node = next(n for n in self.dht if n.node_id == target_id)
-        env.process(target_node.receive_message(sender_id, message))
+        target_node = next((n for n in self.dht if n.node_id == target_id), None)
+        
+        if target_node is None:
+            print(f"[{self.env.now}] ERREUR : Noeud {target_id} introuvable dans la DHT. Message perdu.")
+            return  # On arrête ici pour éviter un crash
+
+        self.env.process(target_node.receive_message(sender_id, type, message))
+
+
+
+
+def add_new_node(env, network, id_size):
+    yield env.timeout(random.uniform(1, 5))  # Simule un délai avant l'arrivée du nœud
+    new_node_id = random.getrandbits(id_size)
+    new_node = Node(env, new_node_id, network.dht, network)  # Correctement initialisé
+
+    print(f"[{env.now}] Nouveau noeud {new_node_id} créé et tente de rejoindre la DHT.")
+
+    # Ajouter le nouveau nœud à la liste DHT
+    network.dht.append(new_node)
+
+    # Lancer le processus de connexion
+    target_id = random.choice([n.node_id for n in network.dht if n.node_id != new_node_id])  
+    env.process(new_node.send_message(target_id, "JOIN_REQUEST", "JOIN_REQUEST"))
+
+
 
 
 # Initialisation de la dht et de l'environnement
@@ -71,7 +113,7 @@ env = simpy.Environment()
 test_neighbor = False
 
 # Générer liste random d'id trié
-id_size = 8
+id_size = 16
 id_list = [random.getrandbits(id_size) for i in range(node_nb)]
 id_list.sort()
 
@@ -105,4 +147,5 @@ if test_neighbor:
         print(f"left id = {node.left_neighbor_id}")
 
 # Lancer la simulation
+env.process(add_new_node(env, network, id_size))
 env.run(until=20)
