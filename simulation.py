@@ -10,7 +10,7 @@ class Node:
         self.dht = dht  # Liste de tous les noeuds
         self.right_neighbor_id = None
         self.left_neighbor_id = None
-        env.process(self.run())
+        self.env.process(self.run())
 
     def send_message(self, target_id, message):
         """Envoie un message à un autre noeud."""
@@ -23,14 +23,14 @@ class Node:
         """Réception d'un message et réponse après traitement."""
         print(f"[{self.env.now}] Noeud {self.node_id} reçoit '{message}' de Noeud {sender_id}")
         yield self.env.timeout(random.uniform(1, 2))  # Simulation du temps de traitement
-        env.process(self.send_message(sender_id, f"Réponse à '{message}'"))  # Réponse
+        self.env.process(self.send_message(sender_id, f"Réponse à '{message}'"))  # Réponse
 
     def run(self):
         """Processus principal du noeud : envoie des messages aléatoires."""
         while True:
             yield self.env.timeout(random.uniform(3, 6))  # Pause entre deux messages
             target_id = random.choice([self.right_neighbor_id, self.left_neighbor_id])
-            env.process(self.send_message(target_id, f"Hello from {self.node_id}"))
+            self.env.process(self.send_message(target_id, f"Hello from {self.node_id}"))
 
 
 class Network:
