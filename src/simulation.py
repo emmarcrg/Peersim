@@ -79,8 +79,9 @@ class Node:
             print("found")
             # Envoie msg position trouvée
             yield self.env.process(self.send_message(new_node_id, "POSITION_FOUND", [self.right_neighbor_id, self.node_id]))
-            # Mise à jour du voisin droit du noeud 
+            # Mise à jour du voisin droit du noeud
             self.right_neighbor_id = new_node_id
+            print(f"[{self.env.now}] Noeud {self.node_id} a comme nouveau voisin droit {self.right_neighbor_id}")
 
         else: # Si la position n'est pas bonne
             print("not found")
