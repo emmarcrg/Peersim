@@ -24,16 +24,26 @@ class Node:
         """Réception d'un message et réponse après traitement."""
         yield self.env.timeout(random.uniform(1, 2))  # Simulation du temps de traitement
         print(type)
-        if type == "JOIN_REQUEST":
+        if type == "JOIN_REQUEST": # Si requete d'insertion, lancement procédure insertion
             self.env.process(self.find_position(sender_id))
 
-        if type == "POSITION_FOUND" and isinstance(message, list):
+        elif type == "POSITION_FOUND" and isinstance(message, list):
             self.dht = self.network.dht  # On récupère la DHT depuis le réseau
+            # Le corps du message va contenir un liste avec les nouveaux voisins du nouveau noeud
             self.right_neighbor_id = message[0]
             self.left_neighbor_id = message[1]
+            self.env.process(self.send_message(sender_id, "NEIGHBOR_REQUEST", "left"))
             print(f"[{self.env.now}] Noeud {self.node_id} s'est inséré entre {self.right_neighbor_id} et {self.left_neighbor_id}")
 
-        else :
+        elif type == "NEIGHBOR_REQUEST": # Message venant de nouveaux noeuds voulant s'insérer
+            if message == "left":
+                self.left_neighbor_id = sender_id
+            elif message == "right":
+                self.left_neighbor_id = sender_id
+
+            print(f"[{self.env.now}] Noeud {self.node_id} a comme nouveau voisin {message} {sender_id}")
+
+        else : # Si c'est un msg pas important
             #print(f"[{self.env.now}] Noeud {self.node_id} reçoit '{message}' de Noeud {sender_id}")
 
             self.env.process(self.send_message(sender_id, "NORMAL_MESSAGE", f"Réponse à '{sender_id}', salut"))  # Réponse
@@ -42,12 +52,12 @@ class Node:
     def find_position(self, new_node_id):
         yield self.env.timeout(1)  # Simulation d'un petit délai avant traitement
 
-        if self.node_id < new_node_id < self.right_neighbor_id:
-            # Envoie la position trouvée
+        if self.node_id < new_node_id < self.right_neighbor_id: # Si le noeud courant est inférieur au nouveau noeud (est son voisin droit est supérieur pour etre sur)
+            # Envoie msg position trouvée
             yield self.env.process(self.send_message(new_node_id, "POSITION_FOUND", [self.right_neighbor_id, self.node_id]))
-            # Mise à jour du voisin droit
+            # Mise à jour du voisin droit du noeud 
             self.right_neighbor_id = new_node_id
-        else:
+        else: # Si la position n'est pas bonne
             # Transmettre la requête au voisin droit
             yield self.env.process(self.send_message(self.right_neighbor_id, "JOIN_REQUEST", "JOIN_REQUEST"))
 
