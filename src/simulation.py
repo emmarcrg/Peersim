@@ -35,15 +35,12 @@ class Node:
     def receive_message(self, message : Message):
         """Réception d'un message et réponse après traitement."""
         yield self.env.timeout(random.uniform(1, 2))  # Simulation du temps de traitement
-        print(message.__str__())
         
         print(f"[{self.env.now}] Noeud {self.node_id} reçoie '{message.body}' de Noeud {message.sender_id}")
         if message.type == "JOIN_REQUEST": # Si requete d'insertion, lancement procédure insertion
-            print(f"message  : {message.__str__()}")
             self.env.process(self.find_position(message.sender_id))
         
         elif message.type == "JOIN_REQUEST_FOLLOW_UP": # Si requete d'insertion suivie, lancement procédure insertion
-            print(message.__str__())
             self.env.process(self.find_position(message.body))
     
             
