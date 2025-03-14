@@ -150,46 +150,67 @@ def add_new_node(env, network, id_size):
 
 
 
+class DHT : 
+    def __init__(self):
+        # Initialisation de la dht et de l'environnement
+        self.nb_node = 4 # Nombre de noeud à l'initialisation
+        self.id_size=12
+        self.env = simpy.Environment()
+        self.test_neighbor = True
 
-# Initialisation de la dht et de l'environnement
-node_nb = 4
-env = simpy.Environment()
-test_neighbor = True
+    def creation_DHT(self):    
+        temp_node=[]
+        for i in range (0, self.nb_node):
+            #On créé n noeuds : 
+            n = Node(self.env, random.getrandbits(self.id_size), None, None)
+            temp_node.append(n)
+        
+        #On prend un des noeuds au hasard
+        print(temp_node)
+        rdm = random.randint(0, self.nb_node-1)
+        n_init = temp_node[rdm]
+        print(n_init.node_id)
+        
+        dht = [n_init]
+        network = Network(self.env, dht)
+        
+        #On prend un deuxième 
+        '''id_list = [random.getrandbits(self.id_size) for i in range(self.nb_node)]
+        id_list.sort()
 
-# Générer liste random d'id trié
-id_size = 16
-id_list = [random.getrandbits(id_size) for i in range(node_nb)]
-id_list.sort()
+        dht = [Node(env, id_list[i], None, None) for i in range(node_nb)]
 
-dht = [Node(env, id_list[i], None, None) for i in range(node_nb)]
+        
+    # Mise à jour des références DHT dans chaque noeud
+    for i, node in enumerate(dht):
+        node.dht = dht
+        node.network = network
+        # Cas premier noeud de la liste
+        if i == 0:
+            node.right_neighbor_id = dht[i+1].node_id
+            node.left_neighbor_id = dht[-1].node_id     # dernier noeud de la liste (cercle)
 
-network = Network(env, dht)
-# Mise à jour des références DHT dans chaque noeud
-for i, node in enumerate(dht):
-    node.dht = dht
-    node.network = network
-    # Cas premier noeud de la liste
-    if i == 0:
-        node.right_neighbor_id = dht[i+1].node_id
-        node.left_neighbor_id = dht[-1].node_id     # dernier noeud de la liste (cercle)
+        # Cas dernier noeud de la liste
+        elif i == (len(dht)-1): 
+            node.right_neighbor_id = dht[0].node_id
+            node.left_neighbor_id = dht[i-1].node_id
 
-    # Cas dernier noeud de la liste
-    elif i == (len(dht)-1): 
-        node.right_neighbor_id = dht[0].node_id
-        node.left_neighbor_id = dht[i-1].node_id
+        # Cas usuel
+        else :
+            node.right_neighbor_id = dht[i+1].node_id
+            node.left_neighbor_id = dht[i-1].node_id
 
-    # Cas usuel
-    else :
-        node.right_neighbor_id = dht[i+1].node_id
-        node.left_neighbor_id = dht[i-1].node_id
+    # test voisinage
+    if test_neighbor:
+        for node in dht:
+            print(f"node id = {node.node_id}")
+            print(f"right id = {node.right_neighbor_id}")
+            print(f"left id = {node.left_neighbor_id}")
 
-# test voisinage
-if test_neighbor:
-    for node in dht:
-        print(f"node id = {node.node_id}")
-        print(f"right id = {node.right_neighbor_id}")
-        print(f"left id = {node.left_neighbor_id}")
+    # Lancer la simulation
+    env.process(add_new_node(env, network, id_size))
+    env.run(until=200)'''
 
-# Lancer la simulation
-env.process(add_new_node(env, network, id_size))
-env.run(until=200)
+if __name__ == "__main__":
+    dht = DHT()
+    dht.creation_DHT()
