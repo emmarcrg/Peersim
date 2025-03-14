@@ -37,7 +37,7 @@ class Node:
             # Le corps du message va contenir un liste avec les nouveaux voisins du nouveau noeud
             self.right_neighbor_id = message[0]
             self.left_neighbor_id = message[1]
-            self.env.process(self.send_message(sender_id, "NEIGHBOR_REQUEST", "left"))
+            self.env.process(self.send_message(self.right_neighbor_id, "NEIGHBOR_REQUEST", "left"))
             print(f"[{self.env.now}] Noeud {self.node_id} s'est inséré entre {self.right_neighbor_id} et {self.left_neighbor_id}")
 
         elif type == "NEIGHBOR_REQUEST": # Message venant de nouveaux noeuds voulant s'insérer
