@@ -16,6 +16,7 @@ class Node:
         """Envoie un message à un autre nœud."""
         latency = random.uniform(1, 3)  # Simulation d'un délai réseau
         yield self.env.timeout(latency)
+
         print(f"[{self.env.now}] Noeud {self.node_id} envoie '{message}' à Noeud {target_id}")
         self.network.deliver(self.node_id, target_id, type, message)  # Remettre le message au réseau
 
@@ -24,9 +25,13 @@ class Node:
         """Réception d'un message et réponse après traitement."""
         yield self.env.timeout(random.uniform(1, 2))  # Simulation du temps de traitement
         print(type)
+        print(f"[{self.env.now}] Noeud {self.node_id} reçoie '{message}' de Noeud {sender_id}")
         if type == "JOIN_REQUEST": # Si requete d'insertion, lancement procédure insertion
             self.env.process(self.find_position(sender_id))
-
+        
+        elif type == "JOIN_REQUEST_FOLLOW_UP": # Si requete d'insertion suivie, lancement procédure insertion
+            self.env.process(self.find_position(message))
+            
         elif type == "POSITION_FOUND" and isinstance(message, list):
             self.dht = self.network.dht  # On récupère la DHT depuis le réseau
             # Le corps du message va contenir un liste avec les nouveaux voisins du nouveau noeud
@@ -45,21 +50,42 @@ class Node:
 
         else : # Si c'est un msg pas important
             #print(f"[{self.env.now}] Noeud {self.node_id} reçoit '{message}' de Noeud {sender_id}")
-
             self.env.process(self.send_message(sender_id, "NORMAL_MESSAGE", f"Réponse à '{sender_id}', salut"))  # Réponse
 
 
     def find_position(self, new_node_id):
         yield self.env.timeout(1)  # Simulation d'un petit délai avant traitement
+        found = False
+        print(f"left id = {node.left_neighbor_id}")
+        print(f"right id = {node.right_neighbor_id}")
+        print(f"node id = {node.node_id}")
+        print(f"new node id = {new_node_id}")
+        # Condition 1 : Cas courant : Si le noeud courant est inférieur au nouveau noeud et son voisin droit est supérieur
+        if self.node_id < new_node_id and new_node_id < self.right_neighbor_id : 
+            found = True
+            print("Condition 1 : Cas courant")
 
-        if self.node_id < new_node_id < self.right_neighbor_id: # Si le noeud courant est inférieur au nouveau noeud (est son voisin droit est supérieur pour etre sur)
+        # Condition 2 : nouveaux noeud est le plus petit
+        if self.node_id > self.right_neighbor_id and new_node_id < self.right_neighbor_id :
+            found = True
+            print("Condition 2 : nouveaux noeud est le plus petit")
+
+        # Condition 3 : nouveaux noeud est le plus grand
+        if self.node_id < new_node_id and  self.right_neighbor_id < new_node_id and self.node_id > self.right_neighbor_id:
+            found = True
+            print("Condition 3 : nouveaux noeud est le plus grand")
+
+        if found :
+            print("found")
             # Envoie msg position trouvée
             yield self.env.process(self.send_message(new_node_id, "POSITION_FOUND", [self.right_neighbor_id, self.node_id]))
             # Mise à jour du voisin droit du noeud 
             self.right_neighbor_id = new_node_id
+
         else: # Si la position n'est pas bonne
+            print("not found")
             # Transmettre la requête au voisin droit
-            yield self.env.process(self.send_message(self.right_neighbor_id, "JOIN_REQUEST", "JOIN_REQUEST"))
+            yield self.env.process(self.send_message(self.right_neighbor_id, "JOIN_REQUEST_FOLLOW_UP", new_node_id))
 
         
     def run(self):
@@ -75,15 +101,13 @@ class Node:
             self.env.process(self.send_message(target_id, "JOIN_REQUEST", "JOIN_REQUEST"))
         else:
             self.is_new = False  # Le nœud fait partie de la DHT
-
+               
         while True:
             yield self.env.timeout(random.uniform(3, 6))  # Pause entre deux messages
-
+            
             if not self.is_new:  # Si le nœud est bien intégré
                 target_id = random.choice([self.right_neighbor_id, self.left_neighbor_id])
                 #self.env.process(self.send_message(target_id, "NORMAL_MESSAGE", f"Hello from {self.node_id}"))
-
-
         
 class Network:
     """Gère les messages entre noeuds."""
@@ -168,4 +192,4 @@ if test_neighbor:
 
 # Lancer la simulation
 env.process(add_new_node(env, network, id_size))
-env.run(until=20)
+env.run(until=200)
