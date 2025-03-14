@@ -7,10 +7,10 @@ class DHT :
         
         # Création de mes noeuds
         print("Création des noeuds")
-        n1 = Node(self.env)
-        n2 = Node(self.env)
-        n3 = Node(self.env)
-        n4 = Node(self.env)
+        n1 = Node(self.env, True, None)
+        n2 = Node(self.env, True, None)
+        n3 = Node(self.env, True, None)
+        n4 = Node(self.env, True, None)
         
         #On créé la DHT
         print("Création de la DHT")
@@ -43,47 +43,29 @@ class DHT :
         self.nodes[2].set_neighbors(self.nodes[1], self.nodes[3])
         self.nodes[3].set_neighbors(self.nodes[2], self.nodes[0])
         
+        id = random.randint(0, len(self.nodes)-1)
+        print(id)
+        n5 = Node(self.env, False, self.nodes[id])
+        self.nodes.append(n5)
+        
         '''for node in nodes:
             node.print_neighbors()'''
         #On lance les noeuds comme étant des processus : 
         print("Lancement des noeuds partie 1")
-        self.action = self.env.process(self.run())
-        
-    def run(self):
-        print("Lancement des noeuds partie 2")
-        print(self.env)
-        print(self.nodes)
         for node in self.nodes:
            self.env.process(node.run())
-        while True:
-            yield self.env.timeout(60)
-        
-    def ajouter_noeud(self, n):
-       
-        if isinstance(n, Node) :
-            while n not in self.nodes :
-                try : 
-                    print("Ajout du noeud")
-                    # On appel un noeud au hasard de la liste
-                    id = random.randint(0, len(self.nodes)-1)
-                    print(id)
-                
-                    # On lui demande de nous guider vers le noeud correspondant à mon voisin
-                    print("On part se chercher un noeud voisin")
-                    yield self.env.process(self.nodes[id].get_place(n))
-                except simpy.Interrupt :
-                    print("Interruption")
-                    print("Pas de noeuds trouvé")
-                
-                #On récupère les deux voisins de notre noeud
-                
 
 
 class Node : 
-    def __init__(self, env) :
+    def __init__(self, env , connect, bt_node) :
         self.env=env
         self.id = random.randint(0, 500000)
+        self.is_connected = connect
+        self.boostrap_node=bt_node
         print(self.id)
+        if self.is_connected==False : 
+            print("Création d'un noeud non connecté")
+            self.ajouter_noeud()
         
     def get_id(self) :
         return self.id
@@ -101,12 +83,12 @@ class Node :
     def run(self):
         while True :
             print('Starting the processus of the node ', self.get_id(), ' at the time ', self.env.now)
-            yield env.timeout(50)
+            yield env.timeout((50))
         
     def get_place(self, new_node):
         while True :
             print('Starting research for node at ', self.env.now)
-        
+    
             #Chacun de mes noeuds sont considérés comme des processus 
             #Cas où le noeud que j'appelle est le plus proche de celui que je veux insérer : 
             if (self.left<new_node.get_id() and self.right>new_node.get_id()) :
@@ -125,10 +107,25 @@ class Node :
                 self.right.get_place(new_node)
             
             yield env.timeout(10)
+    
+    def ajouter_noeud(self):
+        if self.is_connected==False :
+            try : 
+                print("Ajout du noeud")       
+            
+                # On lui demande de nous guider vers le noeud correspondant à mon voisin
+                print("On part se chercher un noeud voisin")
+                self.boostrap_node.get_place(self)
+            except simpy.Interrupt :
+                print("Interruption")
+                print("Pas de noeuds trouvé")
+            
+            #On récupère les deux voisins de notre noeud
+    
         
         
 ######## TEST ########
 env = simpy.Environment()
 dht = DHT(env)
-n5 = Node(env)
-dht.ajouter_noeud(n5)
+env.run(until=400)
+
