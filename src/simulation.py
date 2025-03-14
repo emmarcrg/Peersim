@@ -120,10 +120,10 @@ def add_new_node(env, network, id_size):
 # Initialisation de la dht et de l'environnement
 node_nb = 4
 env = simpy.Environment()
-test_neighbor = False
+test_neighbor = True
 
 # Générer liste random d'id trié
-id_size = 16
+id_size = 8
 id_list = [random.getrandbits(id_size) for i in range(node_nb)]
 id_list.sort()
 
@@ -152,9 +152,11 @@ for i, node in enumerate(dht):
 # test voisinage
 if test_neighbor:
     for node in dht:
-        print(f"node id = {node.node_id}")
-        print(f"right id = {node.right_neighbor_id}")
         print(f"left id = {node.left_neighbor_id}")
+        print(f"right id = {node.right_neighbor_id}")
+        print(f"node id = {node.node_id}")
+        print(f"------------------")
+        
 
 # Lancer la simulation
 env.process(add_new_node(env, network, id_size))
