@@ -162,11 +162,19 @@ def add_new_node(env, network, id_size):
     network.dht.append(new_node)
     
     print("L'id du target est : " + str(target_id))
+
+    # Ajouter le nouveau nœud à la liste DHT
+    network.dht.append(new_node)
+    
     #target_id = random.choice([n.node_id for n in network.dht if n.node_id != new_node_id])  
     env.process(new_node.send_message(target_id, "JOIN_REQUEST", "JOIN_REQUEST"))
 
+def node_quit(env, node):
+    yield env.timeout(random.uniform(1, 5))  # Simule un délai avant le départ du nœud
+    print(f"[{env.now}] Noeud {node.node_id} tente de quitter le voisinage.")
 
-
+    env.process(node.send_message(node.left_neighbor_id, "LEAVE_REQUEST", [node.left_neighbor_id, node.right_neighbor_id]))
+    env.process(node.send_message(node.right_neighbor_id, "LEAVE_REQUEST", [node.left_neighbor_id, node.right_neighbor_id]))
 
 # Initialisation de la dht et de l'environnement
 node_nb = 4
@@ -174,7 +182,7 @@ env = simpy.Environment()
 test_neighbor = True
 
 # Générer liste random d'id trié
-id_size = 16
+id_size = 8
 id_list = [random.getrandbits(id_size) for i in range(node_nb)]
 id_list.sort()
 
@@ -203,10 +211,14 @@ for i, node in enumerate(dht):
 # test voisinage
 if test_neighbor:
     for node in dht:
-        print(f"node id = {node.node_id}")
-        print(f"right id = {node.right_neighbor_id}")
         print(f"left id = {node.left_neighbor_id}")
+        print(f"right id = {node.right_neighbor_id}")
+        print(f"node id = {node.node_id}")
+        print(f"------------------")
 
 # Lancer la simulation
-env.process(add_new_node(env, network, id_size))
+#env.process(add_new_node(env, network, id_size))
+
+quitting_node = random.choice(dht)
+env.process(node_quit(env, quitting_node))
 env.run(until=200)
