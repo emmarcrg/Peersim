@@ -67,7 +67,11 @@ class Node:
         if self.dht is None:  # Si le nœud est nouveau
             self.is_new = True  # Marquer le nœud comme en attente d'intégration
             yield self.env.timeout(random.uniform(1, 3))  # Délai avant de rejoindre la DHT
-            target_id = random.choice([n.node_id for n in self.network.dht])  # Sélection d’un nœud existant
+            # Sélection d’un nœud existant
+            rand = random.randint(0, len(self.network.dht)-1)
+            target_id = self.network.dht[rand].node_id
+            print("L'id du target est : " + str(target_id))
+            #target_id = random.choice([n.node_id for n in self.network.dht])  
             self.env.process(self.send_message(target_id, "JOIN_REQUEST", "JOIN_REQUEST"))
         else:
             self.is_new = False  # Le nœud fait partie de la DHT
@@ -89,7 +93,10 @@ class Network:
 
     def deliver(self, sender_id, target_id, type, message):
         """Livre un message au bon noeud."""
-        target_node = next((n for n in self.dht if n.node_id == target_id), None)
+        for node in self.dht:
+            if node.node_id == target_id:
+                target_node = node
+        #target_node = next((n for n in self.dht if n.node_id == target_id), None)
         
         if target_node is None:
             print(f"[{self.env.now}] ERREUR : Noeud {target_id} introuvable dans la DHT. Message perdu.")
@@ -111,7 +118,10 @@ def add_new_node(env, network, id_size):
     network.dht.append(new_node)
 
     # Lancer le processus de connexion
-    target_id = random.choice([n.node_id for n in network.dht if n.node_id != new_node_id])  
+    rand = random.randint(0, len(network.dht)-1)
+    target_id = network.dht[rand].node_id
+    print("L'id du target est : " + str(target_id))
+    #target_id = random.choice([n.node_id for n in network.dht if n.node_id != new_node_id])  
     env.process(new_node.send_message(target_id, "JOIN_REQUEST", "JOIN_REQUEST"))
 
 
@@ -123,7 +133,7 @@ env = simpy.Environment()
 test_neighbor = True
 
 # Générer liste random d'id trié
-id_size = 8
+id_size = 16
 id_list = [random.getrandbits(id_size) for i in range(node_nb)]
 id_list.sort()
 
@@ -152,11 +162,9 @@ for i, node in enumerate(dht):
 # test voisinage
 if test_neighbor:
     for node in dht:
-        print(f"left id = {node.left_neighbor_id}")
-        print(f"right id = {node.right_neighbor_id}")
         print(f"node id = {node.node_id}")
-        print(f"------------------")
-        
+        print(f"right id = {node.right_neighbor_id}")
+        print(f"left id = {node.left_neighbor_id}")
 
 # Lancer la simulation
 env.process(add_new_node(env, network, id_size))
