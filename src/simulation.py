@@ -42,8 +42,8 @@ class Node:
         
         elif message.type == "JOIN_REQUEST_FOLLOW_UP": # Si requete d'insertion suivie, lancement procédure insertion
             self.env.process(self.find_position(message.body))
-    
-            
+
+
         elif message.type == "POSITION_FOUND" and isinstance(message, list):
             self.dht = self.network.dht  # On récupère la DHT depuis le réseau
             # Le corps du message va contenir un liste avec les nouveaux voisins du nouveau noeud
@@ -69,7 +69,7 @@ class Node:
     def find_position(self, new_node_id):
         yield self.env.timeout(1)  # Simulation d'un petit délai avant traitement
         found = False
-        
+
         print(f"new node id = {new_node_id}")
         # Condition 1 : Cas courant : Si le noeud courant est inférieur au nouveau noeud et son voisin droit est supérieur
         if self.node_id < new_node_id and new_node_id < self.right_neighbor_id : 
