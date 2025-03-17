@@ -39,7 +39,7 @@ class Node:
         """Réception d'un message et réponse après traitement."""
         yield self.env.timeout(random.uniform(1, 2))  # Simulation du temps de traitement
 
-        print(f"[{self.env.now}] Noeud {self.node_id} reçoie '{message.body}' de Noeud {message.sender_id}")
+        print(f"[{self.env.now}] Noeud {self.node_id} reçoit '{message.body}' de Noeud {message.sender_id}")
         if message.type == "JOIN_REQUEST": # Si requete d'insertion, lancement procédure insertion
             self.env.process(self.find_position(message.sender_id))
 
@@ -72,6 +72,11 @@ class Node:
                 print(f"[{self.env.now}] Noeud {self.node_id} a comme nouveau voisin droit {self.right_neighbor_id}")
 
             print(f"[{self.env.now}] Noeud {message.sender_id} a quitté")
+
+        elif message.type == "DATA_TRANSFER": # Message de transfert de données
+            self.datas.extend(message.body)
+            data_ids = [data.id for data in message.body]
+            print(f"[{self.env.now}] Noeud {self.node_id} a reçu des données de Noeud {message.sender_id} avec les IDs : {data_ids}")
 
         elif message.type == "NORMAL_MESSAGE": # Si c'est un msg pas important
             pass
@@ -136,6 +141,13 @@ class Node:
             if not self.is_new:  # Si le nœud est bien intégré
                 target_id = random.choice([self.right_neighbor_id, self.left_neighbor_id])
                 #self.env.process(self.send_message(target_id, "NORMAL_MESSAGE", f"Hello from {self.node_id}"))
+
+    def transfer_data(self):
+        """Transfère les données aux voisins lorsque le nœud quitte."""
+        if self.left_neighbor_id is not None:
+            self.env.process(self.send_message(self.left_neighbor_id, "DATA_TRANSFER", self.datas))
+        if self.right_neighbor_id is not None:
+            self.env.process(self.send_message(self.right_neighbor_id, "DATA_TRANSFER", self.datas))
 
 class Data:
     def __init__(self, id, dht, id_size):
@@ -219,6 +231,10 @@ def node_quit(env, node):
     yield env.timeout(random.uniform(1, 5))  # Simule un délai avant le départ du nœud
     print(f"[{env.now}] Noeud {node.node_id} tente de quitter le voisinage.")
 
+    # Transférer les données aux voisins
+    node.transfer_data()
+
+    # Informer les voisins du départ
     env.process(node.send_message(node.left_neighbor_id, "LEAVE_REQUEST", node.right_neighbor_id))
     env.process(node.send_message(node.right_neighbor_id, "LEAVE_REQUEST", node.left_neighbor_id))
 
