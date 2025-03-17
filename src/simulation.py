@@ -7,6 +7,7 @@ class Message:
         self.target_id = target_id
         self.type = type
         self.body = body
+        self.following_nodes = []
 
     def __str__(self):
         return f"Message from {self.sender_id} to {self.target_id} : {self.body} et le type est {self.type}"
@@ -22,21 +23,46 @@ class Node:
         self.left_neighbor_id = None
         self.lock = simpy.Resource(env, capacity=1)  # Verrou pour le nœud, une ressource pour assurer la séquentialité
         self.env.process(self.run())
+        self.far_nodes_id = []
 
     def send_message(self, target_id, type, body):
         """Envoie un message à un autre nœud."""
         message = Message(self.node_id, target_id, type, body)
+        message.following_nodes.append(self.node_id)
         latency = random.uniform(1, 3)  # Simulation d'un délai réseau
         yield self.env.timeout(latency)
 
         print(f"[{self.env.now}] Noeud {self.node_id} envoie '{message.body}' à Noeud {message.target_id}")
         self.network.deliver(message)  # Remettre le message au réseau
 
+    def forward_message(self, message : Message):
+            """Envoie un message à un autre nœud."""
+            latency = random.uniform(1, 3)  # Simulation d'un délai réseau
+            yield self.env.timeout(latency)
+
+            Message.following_nodes.append(self.node_id)
+
+            print(f"[{self.env.now}] Noeud {self.node_id} fait suivre '{message.body}' à Noeud {message.target_id}")
+            self.network.deliver(message)  # Remettre le message au réseau
+
 
     def receive_message(self, message : Message):
         """Réception d'un message et réponse après traitement."""
         yield self.env.timeout(random.uniform(1, 2))  # Simulation du temps de traitement
         
+        # Process ajout potentiel lien long (en multiple de 2 (à partir de 4))
+        index = 3
+        pas = 1  # On commence avec un pas de 2^0 = 1
+        while index < len(message.following_nodes): # Peut etre besoin d'inverser la liste
+            #print(f"Élément à l'index {index}: {message.following_nodes[index]}")
+            index += pas
+            pas *= 2  # Double le pas à chaque itération
+            if not (message.following_nodes[index] in self.far_nodes_id):
+                self.far_nodes_id.append(message.following_nodes[index])
+                print(f"[{self.env.now}] Noeud {self.node_id} ajoute en lien long {message.following_nodes[index]}")
+
+
+
         print(f"[{self.env.now}] Noeud {self.node_id} reçoie '{message.body}' de Noeud {message.sender_id}")
         if message.type == "JOIN_REQUEST": # Si requete d'insertion, lancement procédure insertion
             self.env.process(self.find_position(message.sender_id))
@@ -68,9 +94,13 @@ class Node:
                                 self.left_neighbor_id = message.body
                                 print(f"[{self.env.now}] Noeud {self.node_id} a comme nouveau voisin gauche {self.left_neighbor_id}")
 
-                            elif message.sender_id == self.right_neighbor_id:
+                            if message.sender_id == self.right_neighbor_id:
                                 self.right_neighbor_id = message.body
                                 print(f"[{self.env.now}] Noeud {self.node_id} a comme nouveau voisin droit {self.right_neighbor_id}")
+
+                            if message.sender_id in self.far_nodes_id:
+                                self.far_nodes_id.remove(message.body)
+                                print(f"[{self.env.now}] Noeud {self.node_id} a retiré des ses liens long {message.body}")
 
                             print(f"[{self.env.now}] Noeud {message.sender_id} a quitté")
 
@@ -110,9 +140,17 @@ class Node:
                 yield self.env.process(self.send_message(new_node_id, "POSITION_FOUND", [self.right_neighbor_id, self.node_id]))
                 self.right_neighbor_id = new_node_id
                 print(f"[{self.env.now}] Noeud {self.node_id} a comme nouveau voisin droit {self.right_neighbor_id}")
+            
             else:  # Si la position n'est pas bonne
+                # Utilisation des liens longs
+                next_node_id = self.right_neighbor_id # Cas de base
+                if self.far_nodes_id:
+                    for node in self.far_nodes_id.sort():
+                        if new_node_id > node: # Si un noeud des liens long est plus intéressant
+                            next_node_id = node
+                            break
                 print("not found")
-                yield self.env.process(self.send_message(self.right_neighbor_id, "JOIN_REQUEST_FOLLOW_UP", new_node_id))
+                yield self.env.process(self.send_message(next_node_id, "JOIN_REQUEST_FOLLOW_UP", new_node_id))
         
     def run(self):
         """Processus principal du noeud : gère son intégration et les messages réguliers."""
@@ -234,7 +272,8 @@ if test_neighbor:
         print(f"------------------")
 
 # Lancer la simulation
-env.process(add_new_node(env, network, id_size))
+for i in range(20):
+    env.process(add_new_node(env, network, id_size))
 
 quitting_node = random.choice(dht)
 env.process(node_quit(env, quitting_node))
