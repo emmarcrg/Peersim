@@ -120,13 +120,18 @@ class Node:
         # Vérifier la position et sécuriser l'accès aux voisins avec un verrou
         with self.lock.request() as req:
             yield req
-            print(f"new node id = {new_node_id}")
-            
+            #print(f"new node id = {new_node_id}")
+            #print(f"right = {self.right_neighbor_id}")
+            #print(f"left = {self.left_neighbor_id}")
             # Conditions pour déterminer la bonne position
+            #print(f"self.node_id < new_node_id {self.node_id < new_node_id}")
+            #print(f"new_node_id < self.right_neighbor_id {new_node_id < self.right_neighbor_id}")
             if self.node_id < new_node_id and new_node_id < self.right_neighbor_id:
                 found = True
                 print("Condition 1 : Cas courant")
 
+            #print(f"self.node_id > self.right_neighbor_id {self.node_id > self.right_neighbor_id}")
+            #print(f"new_node_id < self.right_neighbor_id {new_node_id < self.right_neighbor_id}")
             if self.node_id > self.right_neighbor_id and new_node_id < self.right_neighbor_id:
                 found = True
                 print("Condition 2 : nouveaux noeud est le plus petit")
@@ -209,20 +214,29 @@ def add_new_node(env, network, id_size):
 
     # Lancer le processus de connexion
     rand = random.randint(0, len(network.dht)-1)
-    for node in network.dht:
-        print(node.node_id)
-    target_id = network.dht[rand].node_id
-    
-    # Ajouter le nouveau nœud à la liste DHT
-    network.dht.append(new_node)
-    
-    print("L'id du target est : " + str(target_id))
+    #for node in network.dht:
+        #print(node.node_id)
 
-    # Ajouter le nouveau nœud à la liste DHT
-    network.dht.append(new_node)
+    # recup liste des noeuds conformes (ceux avec des voisins) à refaire
+    liste_conforme = []
+    for node in network.dht:
+        print(f"[{env.now}] dht : {node.node_id}")
+        print(node.right_neighbor_id != None and node.left_neighbor_id != None)
+        if node.right_neighbor_id != None and node.left_neighbor_id != None:
+            liste_conforme.append(node)
+    if liste_conforme != []:
+        target_id = liste_conforme[rand].node_id
+        print("L'id du target est : " + str(target_id))
+         #target_id = random.choice([n.node_id for n in network.dht if n.node_id != new_node_id])  
+        env.process(new_node.send_message(target_id, "JOIN_REQUEST", "JOIN_REQUEST"))
+
+        # Ajouter le nouveau nœud à la liste DHT
+        network.dht.append(new_node)
+   
+
     
-    #target_id = random.choice([n.node_id for n in network.dht if n.node_id != new_node_id])  
-    env.process(new_node.send_message(target_id, "JOIN_REQUEST", "JOIN_REQUEST"))
+    
+
 
 def node_quit(env, node):
     yield env.timeout(random.uniform(1, 5))  # Simule un délai avant le départ du nœud
@@ -237,7 +251,7 @@ env = simpy.Environment()
 test_neighbor = True
 
 # Générer liste random d'id trié
-id_size = 8
+id_size = 16
 id_list = [random.getrandbits(id_size) for i in range(node_nb)]
 id_list.sort()
 
@@ -272,7 +286,7 @@ if test_neighbor:
         print(f"------------------")
 
 # Lancer la simulation
-for i in range(20):
+for i in range(5):
     env.process(add_new_node(env, network, id_size))
 
 quitting_node = random.choice(dht)
