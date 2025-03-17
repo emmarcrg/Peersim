@@ -21,6 +21,10 @@ class Node:
         self.right_neighbor_id = None
         self.left_neighbor_id = None
         self.env.process(self.run())
+        self.datas = []
+        
+        if self.env:
+            self.env.process(self.run())
 
     def send_message(self, target_id, type, body):
         """Envoie un message à un autre nœud."""
@@ -112,7 +116,6 @@ class Node:
             # Transmettre la requête au voisin droit
             yield self.env.process(self.send_message(self.right_neighbor_id, "JOIN_REQUEST_FOLLOW_UP", new_node_id))
 
-        
     def run(self):
         """Processus principal du noeud : gère son intégration et les messages réguliers."""
         if self.dht is None:  # Si le nœud est nouveau
@@ -138,9 +141,21 @@ class Node:
                 #self.env.process(self.send_message(target_id, "NORMAL_MESSAGE", f"Hello from {self.node_id}"))
         
 
+class Data:
+    def __init__(self, id, dht, id_size):
+        self.id = id
+        self.id_max = (1 << id_size)  
+        self.closest_node = self.calculate_closest_node(dht)
 
+        if self.closest_node:
+            self.closest_node.datas.append(self)
+            print(f"Data {self.id} ajoutée au noeud {self.closest_node.node_id}")
 
-
+    def calculate_closest_node(self, dht):
+        """Trouve le nœud le plus proche au-dessus."""
+        value = self.id % self.id_max  
+        return find_closest_node_above(value, dht) 
+    
 class Network:
     """Gère les messages entre noeuds."""
     def __init__(self, env, dht):
@@ -160,6 +175,13 @@ class Network:
 
         self.env.process(target_node.receive_message(message))
 
+def find_closest_node_above(value, dht):
+    """Trouve le nœud ayant un `node_id` juste supérieur ou le plus proche au-dessus."""
+    possible_nodes = [node for node in dht if node.node_id >= value]
+    if possible_nodes:
+        return min(possible_nodes, key=lambda node: node.node_id)
+    else:
+        return min(dht, key=lambda node: node.node_id)
 
 def add_new_node(env, network, id_size):
     yield env.timeout(random.uniform(1, 5))  # Simule un délai avant l'arrivée du nœud
@@ -231,6 +253,13 @@ if test_neighbor:
         print(f"right id = {node.right_neighbor_id}")
         print(f"node id = {node.node_id}")
         print(f"------------------")
+
+# Création des données et assignation du nœud le plus proche
+data_list = [Data(random.getrandbits(id_size), dht, id_size) for _ in range(10)]
+
+# Affichage des résultats
+for data in data_list:
+    print(f"Data ID: {data.id}, Closest Node ID: {data.closest_node.node_id}")
 
 # Lancer la simulation
 #env.process(add_new_node(env, network, id_size))
