@@ -55,15 +55,28 @@ class Node:
         elif message.type == "NEIGHBOR_REQUEST": # Message venant de nouveaux noeuds voulant s'insérer
             if message.body == "left":
                 self.left_neighbor_id = message.sender_id
-            elif message.body == "right":
-                self.left_neighbor_id = message.sender_id
+            if message.body == "right":
+                self.right_neighbor_id = message.sender_id
 
             print(f"[{self.env.now}] Noeud {self.node_id} a comme nouveau voisin {message.body} {message.sender_id}")
+        
+        elif message.type == "LEAVE_REQUEST": # Message venant de noeuds voulant quitter
+            if message.sender_id == self.left_neighbor_id:
+                self.left_neighbor_id = message.body
+                print(f"[{self.env.now}] Noeud {self.node_id} a comme nouveau voisin gauche {self.left_neighbor_id}")
 
-        else : # Si c'est un msg pas important
+            elif message.sender_id == self.right_neighbor_id:
+                self.right_neighbor_id = message.body
+                print(f"[{self.env.now}] Noeud {self.node_id} a comme nouveau voisin droit {self.right_neighbor_id}")
+
+            print(f"[{self.env.now}] Noeud {message.sender_id} a quitté")
+
+        elif message.type == "NORMAL_MESSAGE": # Si c'est un msg pas important
             pass
             #print(f"[{self.env.now}] Noeud {self.node_id} reçoit '{message}' de Noeud {sender_id}")
             #self.env.process(self.send_message(message.sender_id, "NORMAL_MESSAGE", f"Réponse à '{message.sender_id}', salut"))  # Réponse
+        else:
+            print(f"[{self.env.now}] Noeud {self.node_id} a reçu un message inconnu : {message}")
 
 
     def find_position(self, new_node_id):
@@ -105,9 +118,12 @@ class Node:
         if self.dht is None:  # Si le nœud est nouveau
             self.is_new = True  # Marquer le nœud comme en attente d'intégration
             yield self.env.timeout(random.uniform(1, 3))  # Délai avant de rejoindre la DHT
-            # Sélection d’un nœud existant
-            rand = random.randint(0, len(self.network.dht)-1)
-            target_id = self.network.dht[rand].node_id
+
+            if not network.dht:
+                return  # Eviter de continuer si aucun nœud n'est disponible
+            rand = random.randint(0, len(network.dht)-1)
+            target_id = network.dht[rand].node_id
+
             print("L'id du target est : " + str(target_id))
             #target_id = random.choice([n.node_id for n in self.network.dht])  
             self.env.process(self.send_message(target_id, "JOIN_REQUEST", "JOIN_REQUEST"))
@@ -144,7 +160,7 @@ class Network:
 
         self.env.process(target_node.receive_message(message))
 
-        
+
 def add_new_node(env, network, id_size):
     yield env.timeout(random.uniform(1, 5))  # Simule un délai avant l'arrivée du nœud
     new_node_id = random.getrandbits(id_size)
@@ -173,8 +189,8 @@ def node_quit(env, node):
     yield env.timeout(random.uniform(1, 5))  # Simule un délai avant le départ du nœud
     print(f"[{env.now}] Noeud {node.node_id} tente de quitter le voisinage.")
 
-    env.process(node.send_message(node.left_neighbor_id, "LEAVE_REQUEST", [node.left_neighbor_id, node.right_neighbor_id]))
-    env.process(node.send_message(node.right_neighbor_id, "LEAVE_REQUEST", [node.left_neighbor_id, node.right_neighbor_id]))
+    env.process(node.send_message(node.left_neighbor_id, "LEAVE_REQUEST", node.right_neighbor_id))
+    env.process(node.send_message(node.right_neighbor_id, "LEAVE_REQUEST", node.left_neighbor_id))
 
 # Initialisation de la dht et de l'environnement
 node_nb = 4
