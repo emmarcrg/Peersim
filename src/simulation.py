@@ -20,6 +20,7 @@ class Node:
         self.dht = dht  # Liste de tous les noeuds
         self.right_neighbor_id = None
         self.left_neighbor_id = None
+        self.lock = simpy.Resource(env, capacity=1)  # Verrou pour le nœud, une ressource pour assurer la séquentialité
         self.env.process(self.run())
 
     def send_message(self, target_id, type, body):
@@ -44,7 +45,7 @@ class Node:
             self.env.process(self.find_position(message.body))
 
 
-        elif message.type == "POSITION_FOUND" and isinstance(message, list):
+        elif message.type == "POSITION_FOUND":
             self.dht = self.network.dht  # On récupère la DHT depuis le réseau
             # Le corps du message va contenir un liste avec les nouveaux voisins du nouveau noeud
             self.right_neighbor_id = message.body[0]
@@ -61,15 +62,18 @@ class Node:
             print(f"[{self.env.now}] Noeud {self.node_id} a comme nouveau voisin {message.body} {message.sender_id}")
         
         elif message.type == "LEAVE_REQUEST": # Message venant de noeuds voulant quitter
-            if message.sender_id == self.left_neighbor_id:
-                self.left_neighbor_id = message.body
-                print(f"[{self.env.now}] Noeud {self.node_id} a comme nouveau voisin gauche {self.left_neighbor_id}")
+            with self.lock.request() as req:  # Verrouiller la section où on modifie les voisins
+                            yield req
+                            if message.sender_id == self.left_neighbor_id:
+                                self.left_neighbor_id = message.body
+                                print(f"[{self.env.now}] Noeud {self.node_id} a comme nouveau voisin gauche {self.left_neighbor_id}")
 
-            elif message.sender_id == self.right_neighbor_id:
-                self.right_neighbor_id = message.body
-                print(f"[{self.env.now}] Noeud {self.node_id} a comme nouveau voisin droit {self.right_neighbor_id}")
+                            elif message.sender_id == self.right_neighbor_id:
+                                self.right_neighbor_id = message.body
+                                print(f"[{self.env.now}] Noeud {self.node_id} a comme nouveau voisin droit {self.right_neighbor_id}")
 
-            print(f"[{self.env.now}] Noeud {message.sender_id} a quitté")
+                            print(f"[{self.env.now}] Noeud {message.sender_id} a quitté")
+
 
         elif message.type == "NORMAL_MESSAGE": # Si c'est un msg pas important
             pass
@@ -83,35 +87,32 @@ class Node:
         yield self.env.timeout(1)  # Simulation d'un petit délai avant traitement
         found = False
 
-        print(f"new node id = {new_node_id}")
-        # Condition 1 : Cas courant : Si le noeud courant est inférieur au nouveau noeud et son voisin droit est supérieur
-        if self.node_id < new_node_id and new_node_id < self.right_neighbor_id : 
-            found = True
-            print("Condition 1 : Cas courant")
+        # Vérifier la position et sécuriser l'accès aux voisins avec un verrou
+        with self.lock.request() as req:
+            yield req
+            print(f"new node id = {new_node_id}")
+            
+            # Conditions pour déterminer la bonne position
+            if self.node_id < new_node_id and new_node_id < self.right_neighbor_id:
+                found = True
+                print("Condition 1 : Cas courant")
 
-        # Condition 2 : nouveaux noeud est le plus petit
-        if self.node_id > self.right_neighbor_id and new_node_id < self.right_neighbor_id :
-            found = True
-            print("Condition 2 : nouveaux noeud est le plus petit")
+            if self.node_id > self.right_neighbor_id and new_node_id < self.right_neighbor_id:
+                found = True
+                print("Condition 2 : nouveaux noeud est le plus petit")
 
-        # Condition 3 : nouveaux noeud est le plus grand
-        if self.node_id < new_node_id and  self.right_neighbor_id < new_node_id and self.node_id > self.right_neighbor_id:
-            found = True
-            print("Condition 3 : nouveaux noeud est le plus grand")
+            if self.node_id < new_node_id and  self.right_neighbor_id < new_node_id and self.node_id > self.right_neighbor_id:
+                found = True
+                print("Condition 3 : nouveaux noeud est le plus grand")
 
-        if found :
-            print("found")
-            # Envoie msg position trouvée
-            yield self.env.process(self.send_message(new_node_id, "POSITION_FOUND", [self.right_neighbor_id, self.node_id]))
-            # Mise à jour du voisin droit du noeud
-            self.right_neighbor_id = new_node_id
-            print(f"[{self.env.now}] Noeud {self.node_id} a comme nouveau voisin droit {self.right_neighbor_id}")
-
-        else: # Si la position n'est pas bonne
-            print("not found")
-            # Transmettre la requête au voisin droit
-            yield self.env.process(self.send_message(self.right_neighbor_id, "JOIN_REQUEST_FOLLOW_UP", new_node_id))
-
+            if found:
+                print("found")
+                yield self.env.process(self.send_message(new_node_id, "POSITION_FOUND", [self.right_neighbor_id, self.node_id]))
+                self.right_neighbor_id = new_node_id
+                print(f"[{self.env.now}] Noeud {self.node_id} a comme nouveau voisin droit {self.right_neighbor_id}")
+            else:  # Si la position n'est pas bonne
+                print("not found")
+                yield self.env.process(self.send_message(self.right_neighbor_id, "JOIN_REQUEST_FOLLOW_UP", new_node_id))
         
     def run(self):
         """Processus principal du noeud : gère son intégration et les messages réguliers."""
@@ -233,7 +234,7 @@ if test_neighbor:
         print(f"------------------")
 
 # Lancer la simulation
-#env.process(add_new_node(env, network, id_size))
+env.process(add_new_node(env, network, id_size))
 
 quitting_node = random.choice(dht)
 env.process(node_quit(env, quitting_node))
