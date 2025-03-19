@@ -10,6 +10,7 @@ class Node:
         self.dht = dht  # Liste de tous les noeuds
         self.right_neighbor_id = None
         self.left_neighbor_id = None
+        self.id_dht=-1
         self.env.process(self.run())
 
     def send_message(self, target_id, type, message):
@@ -44,14 +45,13 @@ class Node:
             if message == "left":
                 self.left_neighbor_id = sender_id
             elif message == "right":
-                self.left_neighbor_id = sender_id
+                self.right_neighbor_id = sender_id
 
             print(f"[{self.env.now}] Noeud {self.node_id} a comme nouveau voisin {message} {sender_id}")
 
         else : # Si c'est un msg pas important
             #print(f"[{self.env.now}] Noeud {self.node_id} reçoit '{message}' de Noeud {sender_id}")
             self.env.process(self.send_message(sender_id, "NORMAL_MESSAGE", f"Réponse à '{sender_id}', salut"))  # Réponse
-
 
     def find_position(self, new_node_id):
         yield self.env.timeout(1)  # Simulation d'un petit délai avant traitement
@@ -60,44 +60,41 @@ class Node:
         print(f"right id = {self.right_neighbor_id}")
         print(f"node id = {self.node_id}")
         print(f"new node id = {new_node_id}")
-        
-        #Condition initialisation 1 : il n'y a qu'un noeud 
+
+        #Condition initialisation : il n'y a qu'un noeud 
         if len(self.network.dht)==2:
             found = True 
-            print("Condition initialisation 1 : il n'y a qu'un noeud ")            
+            print("Condition initialisation : il n'y a qu'un noeud ")  
             
         # Condition 1 : Cas courant : Si le noeud courant est inférieur au nouveau noeud et son voisin droit est supérieur
-        if self.node_id < new_node_id and new_node_id < self.right_neighbor_id : 
+        if self.node_id < new_node_id and new_node_id < self.right_neighbor_id  : 
             found = True
             print("Condition 1 : Cas courant")
 
-
         # Condition 2 : nouveaux noeud est le plus petit
-        #if self.node_id > self.right_neighbor_id and new_node_id < self.right_neighbor_id :
-        if self.network.dht[0].node_id>new_node_id:
+        if self.node_id > self.right_neighbor_id and new_node_id < self.right_neighbor_id :
             found = True
             print("Condition 2 : nouveaux noeud est le plus petit")
-            id_min=self.network.dht[0]
-            id_min.left_neighbor_id=new_node_id
-
+            
         # Condition 3 : nouveaux noeud est le plus grand
-        if self.node_id < new_node_id and  self.right_neighbor_id < new_node_id and self.node_id > self.right_neighbor_id:
+        if self.node_id < new_node_id and  self.right_neighbor_id < new_node_id and self.node_id > self.right_neighbor_id :
             found = True
             print("Condition 3 : nouveaux noeud est le plus grand")
-            id_min=self.network.dht[0]
-            id_min.left_neighbor_id=new_node_id
         
         if found :
             print("found")
+            
             # Envoie msg position trouvée
             if len(self.network.dht)==2:
                 yield self.env.process(self.send_message(new_node_id, "POSITION_FOUND", [self.right_neighbor_id, self.right_neighbor_id]))
-                yield self.env.process(self.send_message(self.node_id, "POSITION_FOUND", [new_node_id, new_node_id]))
+                #Ce n'est pas très beau mais il faut mettre à jour les voisins du noeud initial
+                yield self.env.process(self.send_message(self.node_id, "POSITION_FOUND", [new_node_id, new_node_id]))              
             else:
                 yield self.env.process(self.send_message(new_node_id, "POSITION_FOUND", [self.right_neighbor_id, self.node_id]))
-                # Mise à jour du voisin droit du noeud 
+                 # Mise à jour du voisin droit du noeud
                 self.right_neighbor_id = new_node_id
-                
+                print(f"[{self.env.now}] Noeud {self.node_id} a comme nouveau voisin droit {self.right_neighbor_id}")
+
 
         else: # Si la position n'est pas bonne
             print("not found")
@@ -166,7 +163,6 @@ class DHT :
         self.network = Network(self.env, self.dht)
         n_init.network = self.network
         n_init.dht = self.dht
-        
 
     def add_new_node(self):
         yield self.env.timeout(random.uniform(1, 5))  # Simule un délai avant l'arrivée du nœud
@@ -181,20 +177,19 @@ class DHT :
         print("L'id du target est : " + str(target_id))
         #target_id = random.choice([n.node_id for n in network.dht if n.node_id != new_node_id]) 
         
+        self.env.process(new_node.send_message(target_id, "JOIN_REQUEST", "JOIN_REQUEST"))
+        
         # Ajouter le nouveau nœud à la liste DHT
         self.network.dht.append(new_node)
-         
-        self.env.process(new_node.send_message(target_id, "JOIN_REQUEST", "JOIN_REQUEST"))
 
     def creation_DHT(self):         
-        #On prend un deuxième noeud :
-        #self.env.process(self.add_new_node())
-        #self.env.run(until=200)
+        #Tant que j'ai des noeuds à ajouter, je les rajoute 
         i=1
-        while i<self.nb_node : 
-            print("On ajoute le noeud " + str(i))
+        while len(self.network.dht)<self.nb_node : 
             self.env.process(self.add_new_node())
-            self.env.run(until=self.env.now + 10)
+            #On trie la DHT par ordre croissant des id des noeuds
+            self.network.dht.sort(key=lambda node: node.node_id)
+            self.env.run(until=self.env.now + 30)
             i+=1
         
         # test voisinage
