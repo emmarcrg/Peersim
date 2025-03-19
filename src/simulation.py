@@ -203,4 +203,6 @@ class DHT :
 if __name__ == "__main__":
     dht = DHT()
     dht.creation_DHT()
+    dht.env.process(dht.add_new_node())
+    dht.env.run(until=300)
     
