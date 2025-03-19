@@ -21,6 +21,7 @@ class Node:
         self.right_neighbor_id = None
         self.left_neighbor_id = None
         self.lock = simpy.Resource(env, capacity=1)  # Verrou pour le nœud, une ressource pour assurer la séquentialité
+        self.lock = simpy.Resource(env, capacity=1)  # Verrou pour le nœud, une ressource pour assurer la séquentialité
         self.env.process(self.run())
 
     def send_message(self, target_id, type, body):
@@ -58,8 +59,23 @@ class Node:
                 self.left_neighbor_id = message.sender_id
             if message.body == "right":
                 self.right_neighbor_id = message.sender_id
+            if message.body == "right":
+                self.right_neighbor_id = message.sender_id
 
             print(f"[{self.env.now}] Noeud {self.node_id} a comme nouveau voisin {message.body} {message.sender_id}")
+        
+        elif message.type == "LEAVE_REQUEST": # Message venant de noeuds voulant quitter
+            with self.lock.request() as req:  # Verrouiller la section où on modifie les voisins
+                            yield req
+                            if message.sender_id == self.left_neighbor_id:
+                                self.left_neighbor_id = message.body
+                                print(f"[{self.env.now}] Noeud {self.node_id} a comme nouveau voisin gauche {self.left_neighbor_id}")
+
+                            elif message.sender_id == self.right_neighbor_id:
+                                self.right_neighbor_id = message.body
+                                print(f"[{self.env.now}] Noeud {self.node_id} a comme nouveau voisin droit {self.right_neighbor_id}")
+
+                            print(f"[{self.env.now}] Noeud {message.sender_id} a quitté")
         
         elif message.type == "LEAVE_REQUEST": # Message venant de noeuds voulant quitter
             with self.lock.request() as req:  # Verrouiller la section où on modifie les voisins
@@ -92,6 +108,11 @@ class Node:
             yield req
             print(f"new node id = {new_node_id}")
             
+            #Condition initialisation : il n'y a qu'un noeud 
+            if len(self.network.dht)==2:
+                found = True 
+                print("Condition initialisation : il n'y a qu'un noeud ")  
+            
             # Conditions pour déterminer la bonne position
             if self.node_id < new_node_id and new_node_id < self.right_neighbor_id:
                 found = True
@@ -100,19 +121,31 @@ class Node:
             if self.node_id > self.right_neighbor_id and new_node_id < self.right_neighbor_id:
                 found = True
                 print("Condition 2 : nouveaux noeud est le plus petit")
+            if self.node_id > self.right_neighbor_id and new_node_id < self.right_neighbor_id:
+                found = True
+                print("Condition 2 : nouveaux noeud est le plus petit")
 
+            if self.node_id < new_node_id and  self.right_neighbor_id < new_node_id and self.node_id > self.right_neighbor_id:
+                found = True
+                print("Condition 3 : nouveaux noeud est le plus grand")
             if self.node_id < new_node_id and  self.right_neighbor_id < new_node_id and self.node_id > self.right_neighbor_id:
                 found = True
                 print("Condition 3 : nouveaux noeud est le plus grand")
 
             if found:
                 print("found")
-                yield self.env.process(self.send_message(new_node_id, "POSITION_FOUND", [self.right_neighbor_id, self.node_id]))
-                self.right_neighbor_id = new_node_id
-                print(f"[{self.env.now}] Noeud {self.node_id} a comme nouveau voisin droit {self.right_neighbor_id}")
+                if len(self.network.dht)==2:
+                    yield self.env.process(self.send_message(new_node_id, "POSITION_FOUND", [self.right_neighbor_id, self.right_neighbor_id]))
+                    #Ce n'est pas très beau mais il faut mettre à jour les voisins du noeud initial
+                    yield self.env.process(self.send_message(self.node_id, "POSITION_FOUND", [new_node_id, new_node_id]))              
+                else:
+                    yield self.env.process(self.send_message(new_node_id, "POSITION_FOUND", [self.right_neighbor_id, self.node_id]))
+                    self.right_neighbor_id = new_node_id
+                    print(f"[{self.env.now}] Noeud {self.node_id} a comme nouveau voisin droit {self.right_neighbor_id}")
             else:  # Si la position n'est pas bonne
                 print("not found")
                 yield self.env.process(self.send_message(self.right_neighbor_id, "JOIN_REQUEST_FOLLOW_UP", new_node_id))
+
         
     def run(self):
         """Processus principal du noeud : gère son intégration et les messages réguliers."""
@@ -120,10 +153,16 @@ class Node:
             self.is_new = True  # Marquer le nœud comme en attente d'intégration
             yield self.env.timeout(random.uniform(1, 3))  # Délai avant de rejoindre la DHT
 
-            if not network.dht:
+            if not self.network.dht:
                 return  # Eviter de continuer si aucun nœud n'est disponible
-            rand = random.randint(0, len(network.dht)-1)
-            target_id = network.dht[rand].node_id
+            rand = random.randint(0, len(self.network.dht)-1)
+            target_id = self.network.dht[rand].node_id
+
+
+            if not self.network.dht:
+                return  # Eviter de continuer si aucun nœud n'est disponible
+            rand = random.randint(0, len(self.network.dht)-1)
+            target_id = self.network.dht[rand].node_id
 
             print("L'id du target est : " + str(target_id))
             #target_id = random.choice([n.node_id for n in self.network.dht])  
@@ -137,9 +176,6 @@ class Node:
             if not self.is_new:  # Si le nœud est bien intégré
                 target_id = random.choice([self.right_neighbor_id, self.left_neighbor_id])
                 #self.env.process(self.send_message(target_id, "NORMAL_MESSAGE", f"Hello from {self.node_id}"))
-        
-
-
 
 
 class Network:
@@ -161,81 +197,77 @@ class Network:
 
         self.env.process(target_node.receive_message(message))
 
+class DHT : 
+    def __init__(self):
+        # Initialisation de la dht et de l'environnement
+        self.nb_node = 4 # Nombre de noeud à l'initialisation
+        self.id_size=12
+        self.env = simpy.Environment()
+        self.test_neighbor = True
+        
+        # On créé un noeud de manière aléatoire
+        n_init = Node(self.env, random.getrandbits(self.id_size), None, None)
+        
+        #Le premier noeud se prend lui même comme voisin
+        n_init.left_neighbor_id=n_init.node_id
+        n_init.right_neighbor_id=n_init.node_id
+        print(n_init.node_id)
+        
+        self.dht = [n_init]
+        self.network = Network(self.env, self.dht)
+        n_init.network = self.network
+        n_init.dht = self.dht
 
-def add_new_node(env, network, id_size):
-    yield env.timeout(random.uniform(1, 5))  # Simule un délai avant l'arrivée du nœud
-    new_node_id = random.getrandbits(id_size)
-    new_node = Node(env, new_node_id, network.dht, network)  # Correctement initialisé
+    def add_new_node(self):
+        yield self.env.timeout(random.uniform(1, 5))  # Simule un délai avant l'arrivée du nœud
+        new_node_id = random.getrandbits(self.id_size)
+        new_node = Node(self.env, new_node_id, self.network.dht, self.network)  # Correctement initialisé
 
-    print(f"[{env.now}] Nouveau noeud {new_node_id} créé et tente de rejoindre la DHT.")
+        print(f"[{self.env.now}] Nouveau noeud {new_node_id} créé et tente de rejoindre la DHT.")       
 
-    # Lancer le processus de connexion
-    rand = random.randint(0, len(network.dht)-1)
-    for node in network.dht:
-        print(node.node_id)
-    target_id = network.dht[rand].node_id
-    
-    # Ajouter le nouveau nœud à la liste DHT
-    network.dht.append(new_node)
-    
-    print("L'id du target est : " + str(target_id))
+        # Lancer le processus de connexion
+        rand = random.randint(0, len(self.network.dht)-1)
+        target_id = self.network.dht[rand].node_id
+        print("L'id du target est : " + str(target_id))
+        #target_id = random.choice([n.node_id for n in network.dht if n.node_id != new_node_id]) 
+        
+        self.env.process(new_node.send_message(target_id, "JOIN_REQUEST", "JOIN_REQUEST"))
+        
+        # Ajouter le nouveau nœud à la liste DHT
+        self.network.dht.append(new_node)
 
-    # Ajouter le nouveau nœud à la liste DHT
-    network.dht.append(new_node)
-    
-    #target_id = random.choice([n.node_id for n in network.dht if n.node_id != new_node_id])  
-    env.process(new_node.send_message(target_id, "JOIN_REQUEST", "JOIN_REQUEST"))
+    def node_quit(self, node):
+        yield self.env.timeout(random.uniform(1, 5))  # Simule un délai avant le départ du nœud
+        print(f"[{self.env.now}] Noeud {node.node_id} tente de quitter le voisinage.")
 
-def node_quit(env, node):
-    yield env.timeout(random.uniform(1, 5))  # Simule un délai avant le départ du nœud
-    print(f"[{env.now}] Noeud {node.node_id} tente de quitter le voisinage.")
+        self.env.process(node.send_message(node.left_neighbor_id, "LEAVE_REQUEST", node.right_neighbor_id))
+        self.env.process(node.send_message(node.right_neighbor_id, "LEAVE_REQUEST", node.left_neighbor_id))
 
-    env.process(node.send_message(node.left_neighbor_id, "LEAVE_REQUEST", node.right_neighbor_id))
-    env.process(node.send_message(node.right_neighbor_id, "LEAVE_REQUEST", node.left_neighbor_id))
+    def creation_DHT(self):         
+        #Tant que j'ai des noeuds à ajouter, je les rajoute 
+        i=1
+        while len(self.network.dht)<self.nb_node : 
+            self.env.process(self.add_new_node())
+            #On trie la DHT par ordre croissant des id des noeuds
+            self.network.dht.sort(key=lambda node: node.node_id)
+            self.env.run(until=self.env.now + 30)
+            i+=1
+        
+        # test voisinage
+        if self.test_neighbor:
+            for node in self.network.dht:
+                print(f"node id = {node.node_id}")
+                print(f"right id = {node.right_neighbor_id}")
+                print(f"left id = {node.left_neighbor_id}")
+                print("______________________________________________")
+                
+if __name__ == "__main__":
+    dht = DHT()
+    dht.creation_DHT()
+    dht.env.process(dht.add_new_node())
+    quitting_node = random.choice(dht.dht)
+    dht.env.process(dht.node_quit(quitting_node))
+    dht.env.run(until=300)
+        
 
-# Initialisation de la dht et de l'environnement
-node_nb = 4
-env = simpy.Environment()
-test_neighbor = True
 
-# Générer liste random d'id trié
-id_size = 8
-id_list = [random.getrandbits(id_size) for i in range(node_nb)]
-id_list.sort()
-
-dht = [Node(env, id_list[i], None, None) for i in range(node_nb)]
-
-network = Network(env, dht)
-# Mise à jour des références DHT dans chaque noeud
-for i, node in enumerate(dht):
-    node.dht = dht
-    node.network = network
-    # Cas premier noeud de la liste
-    if i == 0:
-        node.right_neighbor_id = dht[i+1].node_id
-        node.left_neighbor_id = dht[-1].node_id     # dernier noeud de la liste (cercle)
-
-    # Cas dernier noeud de la liste
-    elif i == (len(dht)-1): 
-        node.right_neighbor_id = dht[0].node_id
-        node.left_neighbor_id = dht[i-1].node_id
-
-    # Cas usuel
-    else :
-        node.right_neighbor_id = dht[i+1].node_id
-        node.left_neighbor_id = dht[i-1].node_id
-
-# test voisinage
-if test_neighbor:
-    for node in dht:
-        print(f"left id = {node.left_neighbor_id}")
-        print(f"right id = {node.right_neighbor_id}")
-        print(f"node id = {node.node_id}")
-        print(f"------------------")
-
-# Lancer la simulation
-env.process(add_new_node(env, network, id_size))
-
-quitting_node = random.choice(dht)
-env.process(node_quit(env, quitting_node))
-env.run(until=200)
