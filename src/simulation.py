@@ -22,11 +22,11 @@ class Node:
         self.right_neighbor_id = None
         self.left_neighbor_id = None
         self.lock = simpy.Resource(env, capacity=1)  # Verrou pour le nœud, une ressource pour assurer la séquentialité
-        self.env.process(self.run())
         self.far_nodes_id = []
+        self.env.process(self.run())
 
     def send_message(self, target_id, type, body):
-        """Envoie un message à un autre nœud."""
+        """Envoie un nouveau message à un autre nœud."""
         message = Message(self.node_id, target_id, type, body)
         message.following_nodes.append(self.node_id)
         latency = random.uniform(1, 3)  # Simulation d'un délai réseau
@@ -36,7 +36,7 @@ class Node:
         self.network.deliver(message)  # Remettre le message au réseau
 
     def forward_message(self, message : Message):
-            """Envoie un message à un autre nœud."""
+            """Envoie un message d'un message dont le type et le body ne change pas"""
             latency = random.uniform(1, 3)  # Simulation d'un délai réseau
             yield self.env.timeout(latency)
 
@@ -50,18 +50,15 @@ class Node:
         """Réception d'un message et réponse après traitement."""
         yield self.env.timeout(random.uniform(1, 2))  # Simulation du temps de traitement
         
-        # Process ajout potentiel lien long (en multiple de 2 (à partir de 4))
+        # Process pour l'ajout potentiel d'un lien long (en multiple de 2 (on commence à 4))
         index = 3
-        pas = 1  # On commence avec un pas de 2^0 = 1
-        while index < len(message.following_nodes): # Peut etre besoin d'inverser la liste
+        following_nodes_reversed = message.following_nodes[::-1] # On met le voisin du noeud courant au début de la liste
+        while index < len(following_nodes_reversed): # Peut etre besoin d'inverser la liste
             #print(f"Élément à l'index {index}: {message.following_nodes[index]}")
-            index += pas
-            pas *= 2  # Double le pas à chaque itération
-            if not (message.following_nodes[index] in self.far_nodes_id):
-                self.far_nodes_id.append(message.following_nodes[index])
+            index *= 2
+            if not (following_nodes_reversed[index] in self.far_nodes_id):
+                self.far_nodes_id.append(following_nodes_reversed[index])
                 print(f"[{self.env.now}] Noeud {self.node_id} ajoute en lien long {message.following_nodes[index]}")
-
-
 
         print(f"[{self.env.now}] Noeud {self.node_id} reçoie '{message.body}' de Noeud {message.sender_id}")
         if message.type == "JOIN_REQUEST": # Si requete d'insertion, lancement procédure insertion
@@ -120,18 +117,18 @@ class Node:
         # Vérifier la position et sécuriser l'accès aux voisins avec un verrou
         with self.lock.request() as req:
             yield req
-            #print(f"new node id = {new_node_id}")
-            #print(f"right = {self.right_neighbor_id}")
-            #print(f"left = {self.left_neighbor_id}")
+            print(f"new node id = {new_node_id}")
+
+            #Condition initialisation : il n'y a qu'un noeud 
+            if len(self.network.dht)==2:
+                found = True 
+                print("Condition initialisation : il n'y a qu'un noeud ")  
+
             # Conditions pour déterminer la bonne position
-            #print(f"self.node_id < new_node_id {self.node_id < new_node_id}")
-            #print(f"new_node_id < self.right_neighbor_id {new_node_id < self.right_neighbor_id}")
             if self.node_id < new_node_id and new_node_id < self.right_neighbor_id:
                 found = True
                 print("Condition 1 : Cas courant")
 
-            #print(f"self.node_id > self.right_neighbor_id {self.node_id > self.right_neighbor_id}")
-            #print(f"new_node_id < self.right_neighbor_id {new_node_id < self.right_neighbor_id}")
             if self.node_id > self.right_neighbor_id and new_node_id < self.right_neighbor_id:
                 found = True
                 print("Condition 2 : nouveaux noeud est le plus petit")
@@ -142,9 +139,14 @@ class Node:
 
             if found:
                 print("found")
-                yield self.env.process(self.send_message(new_node_id, "POSITION_FOUND", [self.right_neighbor_id, self.node_id]))
-                self.right_neighbor_id = new_node_id
-                print(f"[{self.env.now}] Noeud {self.node_id} a comme nouveau voisin droit {self.right_neighbor_id}")
+                if len(self.network.dht)==2:
+                    yield self.env.process(self.send_message(new_node_id, "POSITION_FOUND", [self.right_neighbor_id, self.right_neighbor_id]))
+                    #Ce n'est pas très beau mais il faut mettre à jour les voisins du noeud initial
+                    yield self.env.process(self.send_message(self.node_id, "POSITION_FOUND", [new_node_id, new_node_id]))              
+                else:
+                    yield self.env.process(self.send_message(new_node_id, "POSITION_FOUND", [self.right_neighbor_id, self.node_id]))
+                    self.right_neighbor_id = new_node_id
+                    print(f"[{self.env.now}] Noeud {self.node_id} a comme nouveau voisin droit {self.right_neighbor_id}")
             
             else:  # Si la position n'est pas bonne
                 # Utilisation des liens longs
@@ -181,8 +183,6 @@ class Node:
                 target_id = random.choice([self.right_neighbor_id, self.left_neighbor_id])
                 #self.env.process(self.send_message(target_id, "NORMAL_MESSAGE", f"Hello from {self.node_id}"))
         
-
-
 
 
 class Network:
