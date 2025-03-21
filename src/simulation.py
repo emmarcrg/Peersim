@@ -218,7 +218,7 @@ class DHT :
     def creation_DHT(self):         
         #Tant que j'ai des noeuds à ajouter, je les rajoute 
         i=1
-        while len(self.network.dht)<self.nb_node : 
+        while len(self.network.dht) < self.nb_node : 
             self.env.process(self.add_new_node())
             #On trie la DHT par ordre croissant des id des noeuds
             self.network.dht.sort(key=lambda node: node.node_id)
