@@ -21,7 +21,6 @@ class Node:
         self.right_neighbor_id = None
         self.left_neighbor_id = None
         self.lock = simpy.Resource(env, capacity=1)  # Verrou pour le nœud, une ressource pour assurer la séquentialité
-        self.lock = simpy.Resource(env, capacity=1)  # Verrou pour le nœud, une ressource pour assurer la séquentialité
         self.env.process(self.run())
 
     def send_message(self, target_id, type, body):
@@ -59,8 +58,6 @@ class Node:
                 self.left_neighbor_id = message.sender_id
             if message.body == "right":
                 self.right_neighbor_id = message.sender_id
-            if message.body == "right":
-                self.right_neighbor_id = message.sender_id
 
             print(f"[{self.env.now}] Noeud {self.node_id} a comme nouveau voisin {message.body} {message.sender_id}")
         
@@ -77,19 +74,6 @@ class Node:
 
                             print(f"[{self.env.now}] Noeud {message.sender_id} a quitté")
         
-        elif message.type == "LEAVE_REQUEST": # Message venant de noeuds voulant quitter
-            with self.lock.request() as req:  # Verrouiller la section où on modifie les voisins
-                            yield req
-                            if message.sender_id == self.left_neighbor_id:
-                                self.left_neighbor_id = message.body
-                                print(f"[{self.env.now}] Noeud {self.node_id} a comme nouveau voisin gauche {self.left_neighbor_id}")
-
-                            elif message.sender_id == self.right_neighbor_id:
-                                self.right_neighbor_id = message.body
-                                print(f"[{self.env.now}] Noeud {self.node_id} a comme nouveau voisin droit {self.right_neighbor_id}")
-
-                            print(f"[{self.env.now}] Noeud {message.sender_id} a quitté")
-
 
         elif message.type == "NORMAL_MESSAGE": # Si c'est un msg pas important
             pass
@@ -121,13 +105,7 @@ class Node:
             if self.node_id > self.right_neighbor_id and new_node_id < self.right_neighbor_id:
                 found = True
                 print("Condition 2 : nouveaux noeud est le plus petit")
-            if self.node_id > self.right_neighbor_id and new_node_id < self.right_neighbor_id:
-                found = True
-                print("Condition 2 : nouveaux noeud est le plus petit")
 
-            if self.node_id < new_node_id and  self.right_neighbor_id < new_node_id and self.node_id > self.right_neighbor_id:
-                found = True
-                print("Condition 3 : nouveaux noeud est le plus grand")
             if self.node_id < new_node_id and  self.right_neighbor_id < new_node_id and self.node_id > self.right_neighbor_id:
                 found = True
                 print("Condition 3 : nouveaux noeud est le plus grand")
@@ -152,12 +130,6 @@ class Node:
         if self.dht is None:  # Si le nœud est nouveau
             self.is_new = True  # Marquer le nœud comme en attente d'intégration
             yield self.env.timeout(random.uniform(1, 3))  # Délai avant de rejoindre la DHT
-
-            if not self.network.dht:
-                return  # Eviter de continuer si aucun nœud n'est disponible
-            rand = random.randint(0, len(self.network.dht)-1)
-            target_id = self.network.dht[rand].node_id
-
 
             if not self.network.dht:
                 return  # Eviter de continuer si aucun nœud n'est disponible
