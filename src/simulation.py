@@ -298,12 +298,13 @@ class DHT:
     def run(self):
         self.creation_DHT()
         self.env.process(self.add_new_node())
+        self.env.process(self.create_and_store_data(5))
         
         if self.dht:
             quitting_node = random.choice(self.dht)
             self.env.process(self.node_quit(quitting_node))
         
-        self.env.process(self.create_and_store_data(5))
+        
         self.env.run(until=300)
         
 if __name__ == "__main__":
