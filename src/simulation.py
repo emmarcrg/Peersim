@@ -216,21 +216,20 @@ def find_closest_node_above(value, dht):
     else:
         return min(dht, key=lambda node: node.node_id)
     
-class DHT : 
+import simpy
+import random
+
+class DHT:
     def __init__(self):
-        # Initialisation de la dht et de l'environnement
-        self.nb_node = 4 # Nombre de noeud à l'initialisation
-        self.id_size=12
+        self.nb_node = 4  # Nombre de noeuds à l'initialisation
+        self.id_size = 12
         self.env = simpy.Environment()
         self.test_neighbor = True
         
-        # On créé un noeud de manière aléatoire
         n_init = Node(self.env, random.getrandbits(self.id_size), None, None)
-        
-        #Le premier noeud se prend lui même comme voisin
-        n_init.left_neighbor_id=n_init.node_id
-        n_init.right_neighbor_id=n_init.node_id
-        print(n_init.node_id)
+        n_init.left_neighbor_id = n_init.node_id
+        n_init.right_neighbor_id = n_init.node_id
+        n_init.data_store = []
         
         self.dht = [n_init]
         self.network = Network(self.env, self.dht)
@@ -238,55 +237,75 @@ class DHT :
         n_init.dht = self.dht
 
     def add_new_node(self):
-        yield self.env.timeout(random.uniform(1, 5))  # Simule un délai avant l'arrivée du nœud
+        yield self.env.timeout(random.uniform(1, 5))
         new_node_id = random.getrandbits(self.id_size)
-        new_node = Node(self.env, new_node_id, self.network.dht, self.network)  # Correctement initialisé
-
-        print(f"[{self.env.now}] Nouveau noeud {new_node_id} créé et tente de rejoindre la DHT.")       
-
-        # Lancer le processus de connexion
-        rand = random.randint(0, len(self.network.dht)-1)
+        new_node = Node(self.env, new_node_id, self.network.dht, self.network)
+        new_node.data_store = []
+        
+        print(f"[{self.env.now}] Nouveau noeud {new_node_id} créé et tente de rejoindre la DHT.")
+        rand = random.randint(0, len(self.network.dht) - 1)
         target_id = self.network.dht[rand].node_id
-        print("L'id du target est : " + str(target_id))
-        #target_id = random.choice([n.node_id for n in network.dht if n.node_id != new_node_id]) 
         
         self.env.process(new_node.send_message(target_id, "JOIN_REQUEST", "JOIN_REQUEST"))
-        
-        # Ajouter le nouveau nœud à la liste DHT
         self.network.dht.append(new_node)
-
+    
     def node_quit(self, node):
-        yield self.env.timeout(random.uniform(1, 5))  # Simule un délai avant le départ du nœud
+        yield self.env.timeout(random.uniform(1, 5))
         print(f"[{self.env.now}] Noeud {node.node_id} tente de quitter le voisinage.")
-
+        
+        # Transférer les données avant de quitter
+        self.transfer_data_before_exit(node)
+        
         self.env.process(node.send_message(node.left_neighbor_id, "LEAVE_REQUEST", node.right_neighbor_id))
         self.env.process(node.send_message(node.right_neighbor_id, "LEAVE_REQUEST", node.left_neighbor_id))
-
-    def creation_DHT(self):         
-        #Tant que j'ai des noeuds à ajouter, je les rajoute 
-        i=1
-        while len(self.network.dht) < self.nb_node : 
+        
+        # Mettre à jour la DHT après le départ
+        self.update_storage_after_exit(node)
+    
+    def transfer_data_before_exit(self, node):
+        """Transfère les données stockées sur un noeud quittant vers un autre noeud actif."""
+        if hasattr(node, 'data_store') and node.data_store:
+            target_node = random.choice([n for n in self.dht if n.node_id != node.node_id])
+            target_node.data_store.extend(node.data_store)
+            print(f"Les données du noeud {node.node_id} ont été transférées au noeud {target_node.node_id}.")
+    
+    def update_storage_after_exit(self, node):
+        """Met à jour la DHT après le départ d'un noeud."""
+        self.dht.remove(node)
+        print(f"Le noeud {node.node_id} a quitté la DHT et la structure a été mise à jour.")
+    
+    def creation_DHT(self):
+        while len(self.network.dht) < self.nb_node:
             self.env.process(self.add_new_node())
-            #On trie la DHT par ordre croissant des id des noeuds
             self.network.dht.sort(key=lambda node: node.node_id)
             self.env.run(until=self.env.now + 30)
-            i+=1
         
-        # test voisinage
         if self.test_neighbor:
             for node in self.network.dht:
                 print(f"node id = {node.node_id}")
                 print(f"right id = {node.right_neighbor_id}")
                 print(f"left id = {node.left_neighbor_id}")
                 print("______________________________________________")
-                
+    
+    def create_and_store_data(self, num_data=5):
+        """Crée des données et les stocke dans la DHT."""
+        for _ in range(num_data):
+            yield self.env.timeout(random.uniform(1, 5))
+            data_id = random.getrandbits(self.id_size)
+            data = Data(data_id, self.dht, self.id_size)
+            print(f"Donnée {data_id} insérée dans la DHT.")
+        
+    def run(self):
+        self.creation_DHT()
+        self.env.process(self.add_new_node())
+        
+        if self.dht:
+            quitting_node = random.choice(self.dht)
+            self.env.process(self.node_quit(quitting_node))
+        
+        self.env.process(self.create_and_store_data(5))
+        self.env.run(until=300)
+        
 if __name__ == "__main__":
     dht = DHT()
-    dht.creation_DHT()
-    dht.env.process(dht.add_new_node())
-    quitting_node = random.choice(dht.dht)
-    dht.env.process(dht.node_quit(quitting_node))
-    dht.env.run(until=300)
-        
-
-
+    dht.run()
