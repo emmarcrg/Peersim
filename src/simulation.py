@@ -172,7 +172,7 @@ class Node:
 class Data:
     def __init__(self, id, dht, id_size):
         self.id = id
-        self.id_max = (1 << id_size)
+        self.valeur_max = (1 << id_size) #Valeur maximum possible de l'id
         self.closest_node = self.calculate_closest_node(dht)
 
         if self.closest_node:
@@ -181,7 +181,7 @@ class Data:
 
     def calculate_closest_node(self, dht):
         """Trouve le nœud le plus proche au-dessus."""
-        value = self.id % self.id_max
+        value = self.id % self.valeur_max
         return find_closest_node_above(value, dht)
 
     def store_on_responsible_and_neighbors(self):
