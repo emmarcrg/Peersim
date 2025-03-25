@@ -172,7 +172,7 @@ class Node:
 class Data:
     def __init__(self, id, dht, id_size):
         self.id = id
-        self.valeur_max = (1 << id_size) #Valeur maximum possible de l'id
+        self.valeur_max = (1 << id_size)  # Valeur maximum possible de l'id
         self.closest_node = self.calculate_closest_node(dht)
 
         if self.closest_node:
@@ -185,11 +185,16 @@ class Data:
         return find_closest_node_above(value, dht)
 
     def store_on_responsible_and_neighbors(self):
+        # Store data on the closest node
         self.closest_node.datas.append(self)
+
+        # Store data on the left neighbor if it exists
         if self.closest_node.left_neighbor_id is not None:
             left_neighbor = next((n for n in self.closest_node.dht if n.node_id == self.closest_node.left_neighbor_id), None)
             if left_neighbor:
                 left_neighbor.datas.append(self)
+
+        # Store data on the right neighbor if it exists
         if self.closest_node.right_neighbor_id is not None:
             right_neighbor = next((n for n in self.closest_node.dht if n.node_id == self.closest_node.right_neighbor_id), None)
             if right_neighbor:
@@ -216,8 +221,14 @@ class Network:
         self.env.process(target_node.receive_message(message))
 
 def find_closest_node_above(value, dht):
-    """Trouve le nœud ayant un `node_id` juste supérieur ou le plus proche au-dessus."""
+    """Trouve le nœud ayant un `node_id` juste supérieur ou le plus proche au-dessus.
+    Si `value` est supérieur à tous les `node_id`, retourne le plus petit (modulo logique).
+    """
+    if not dht:
+        return None  # Aucun nœud dans la DHT
+
     possible_nodes = [node for node in dht if node.node_id >= value]
+
     if possible_nodes:
         return min(possible_nodes, key=lambda node: node.node_id)
     else:
@@ -257,37 +268,48 @@ class DHT:
         yield self.env.timeout(random.uniform(1, 5))
         print(f"[{self.env.now}] Noeud {node.node_id} tente de quitter le voisinage.")
 
-        # Transférer les données avant de quitter
-        self.transfer_data_before_exit(node)
+        # Check if the node has any data to transfer
+        if node.datas:
+            # Transfer data to neighbors before sending LEAVE_REQUEST
+            if node.left_neighbor_id is not None:
+                left_neighbor = next((n for n in self.dht if n.node_id == node.left_neighbor_id), None)
+                if left_neighbor:
+                    left_neighbor.datas.extend(node.datas)
+                    print(f"[{self.env.now}] Data from node {node.node_id} transferred to {left_neighbor.node_id}")
+                    print(f"[{self.env.now}] Transferred data IDs: {[data.id for data in node.datas]}")
 
+            if node.right_neighbor_id is not None:
+                right_neighbor = next((n for n in self.dht if n.node_id == node.right_neighbor_id), None)
+                if right_neighbor:
+                    right_neighbor.datas.extend(node.datas)
+                    print(f"[{self.env.now}] Data from node {node.node_id} transferred to {right_neighbor.node_id}")
+                    print(f"[{self.env.now}] Transferred data IDs: {[data.id for data in node.datas]}")
+
+        # Send LEAVE_REQUEST messages to neighbors
         self.env.process(node.send_message(node.left_neighbor_id, "LEAVE_REQUEST", node.right_neighbor_id))
         self.env.process(node.send_message(node.right_neighbor_id, "LEAVE_REQUEST", node.left_neighbor_id))
 
-        # Mettre à jour la DHT après le départ
-        self.update_storage_after_exit(node)
+        # Update DHT and storage after the node leaves
+        self.update_dht_and_storage(node, Message(node.node_id, None, "LEAVE_REQUEST", None))
 
-    def transfer_data_before_exit(self, node):
-        """Transfère les données stockées sur un noeud quittant vers un autre noeud actif."""
-        if hasattr(node, 'datas') and node.datas:
-            target_node = random.choice([n for n in self.dht if n.node_id != node.node_id])
-            target_node.datas.extend(node.datas)
-            print(f"[{self.env.now}] Les données du noeud {node.node_id} ont été transférées au noeud {target_node.node_id}.")
-            print(f"[{self.env.now}] Données transférées : {[data.id for data in node.datas]}")
+    def update_dht_and_storage(self, node, message):
+        """Met à jour la DHT et redistribue les données lorsqu'un nœud rejoint ou quitte la DHT."""
+        if message.type == "LEAVE_REQUEST":
+            self.dht.remove(node)
+            print(f"[{self.env.now}] Le nœud {node.node_id} a quitté la DHT et la structure a été mise à jour.")
 
-    def update_storage_after_exit(self, node):
-        """Met à jour la DHT après le départ d'un noeud."""
-        self.dht.remove(node)
-        print(f"[{self.env.now}] Le noeud {node.node_id} a quitté la DHT et la structure a été mise à jour.")
+        elif message.type == "JOIN_REQUEST":
+            self.dht.append(node)
+            print(f"[{self.env.now}] Le nœud {node.node_id} a rejoint la DHT.")
 
-    def redistribute_data(self):
-        """Réattribue les données après un changement de la DHT."""
-        for node in self.dht:
-            for data in node.datas:
-                data.closest_node = find_closest_node_above(data.id, self.dht)
-                if data.closest_node != node:
-                    data.closest_node.datas.append(data)
-                    node.datas.remove(data)
-                    print(f"[{self.env.now}] Data {data.id} déplacée vers {data.closest_node.node_id}")
+        # Réattribuer les données après le changement de la DHT
+        for n in self.dht:
+            for data in n.datas[:]:  # Copie pour éviter les modifications en boucle
+                closest_node = find_closest_node_above(data.id, self.dht)
+                if closest_node != n:
+                    closest_node.datas.append(data)
+                    n.datas.remove(data)
+                    print(f"[{self.env.now}] Data {data.id} déplacée vers {closest_node.node_id}")
 
     def creation_DHT(self):
         while len(self.network.dht) < self.nb_node:
@@ -310,6 +332,15 @@ class DHT:
             data = Data(data_id, self.dht, self.id_size)
             print(f"[{self.env.now}] Donnée {data_id} insérée dans la DHT.")
 
+    def display_data_in_dht(self):
+        """Affiche toutes les données présentes dans la DHT."""
+        print("Liste des données présentes dans la DHT :")
+        for node in self.dht:
+            if node.datas:
+                print(f"Noeud {node.node_id} contient les données : {[data.id for data in node.datas]}")
+            else:
+                print(f"Noeud {node.node_id} ne contient aucune donnée.")
+
     def run(self):
         self.creation_DHT()
         self.env.process(self.add_new_node())
@@ -320,6 +351,9 @@ class DHT:
             self.env.process(self.node_quit(quitting_node))
 
         self.env.run(until=300)
+
+        # Display the data in the DHT at the end of the simulation
+        self.display_data_in_dht()
 
 if __name__ == "__main__":
     dht = DHT()
