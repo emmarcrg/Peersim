@@ -2,18 +2,17 @@ import simpy
 import random
 
 class bcolors:
-        #   print(bcolors.HEADER + "------" + bcolors.ENDC)
-        HEADER = '\033[95m' # violet
-        OKBLUE = '\033[94m' # dark blue
-        OKCYAN = '\033[96m' # cyan
-        OKGREEN = '\033[92m'   # green
-        WARNING = '\033[93m'    # yellow
-        FAIL = '\033[91m'   # red
-        ENDC = '\033[0m'    # white
-        BOLD = '\033[1m'    # bold
-        UNDERLINE = '\033[4m' # underline
+    HEADER = '\033[95m'
+    OKBLUE = '\033[94m'
+    OKCYAN = '\033[96m'
+    OKGREEN = '\033[92m'
+    WARNING = '\033[93m'
+    FAIL = '\033[91m'
+    ENDC = '\033[0m'
+    BOLD = '\033[1m'
+    UNDERLINE = '\033[4m'
 
-class Message: 
+class Message:
     def __init__(self, sender_id, target_id, type, body):
         self.sender_id = sender_id
         self.target_id = target_id
@@ -22,7 +21,7 @@ class Message:
 
     def __str__(self):
         return f"Message from {self.sender_id} to {self.target_id} : {self.body} et le type est {self.type}"
-    
+
 class Node:
     """Représente un noeud dans la DHT."""
     def __init__(self, env, node_id, dht, network):
@@ -33,6 +32,7 @@ class Node:
         self.right_neighbor_id = None
         self.left_neighbor_id = None
         self.lock = simpy.Resource(env, capacity=1)  # Verrou pour le nœud, une ressource pour assurer la séquentialité
+        self.datas = []  # Add this line to initialize the datas attribute
         self.env.process(self.run())
 
     def send_message(self, target_id, type, body):
@@ -160,6 +160,36 @@ class Node:
                 target_id = random.choice([self.right_neighbor_id, self.left_neighbor_id])
                 #self.env.process(self.send_message(target_id, "NORMAL_MESSAGE", f"Hello from {self.node_id}"))
 
+class Data:
+    def __init__(self, id, dht, id_size):
+        self.id = id
+        self.valeur_max = (1 << id_size)  # Valeur maximum possible de l'id
+        self.closest_node = self.calculate_closest_node(dht)
+
+        if self.closest_node:
+            self.store_on_responsible_and_neighbors()
+            print(f"[{self.closest_node.env.now}] Data {self.id} stockée sur {self.closest_node.node_id}, {self.closest_node.left_neighbor_id}, {self.closest_node.right_neighbor_id}")
+
+    def calculate_closest_node(self, dht):
+        """Trouve le nœud le plus proche au-dessus."""
+        value = self.id % self.valeur_max
+        return find_closest_node_above(value, dht)
+
+    def store_on_responsible_and_neighbors(self):
+        # Store data on the closest node
+        self.closest_node.datas.append(self)
+
+        # Store data on the left neighbor if it exists
+        if self.closest_node.left_neighbor_id is not None:
+            left_neighbor = next((n for n in self.closest_node.dht if n.node_id == self.closest_node.left_neighbor_id), None)
+            if left_neighbor:
+                left_neighbor.datas.append(self)
+
+        # Store data on the right neighbor if it exists
+        if self.closest_node.right_neighbor_id is not None:
+            right_neighbor = next((n for n in self.closest_node.dht if n.node_id == self.closest_node.right_neighbor_id), None)
+            if right_neighbor:
+                right_neighbor.datas.append(self)
 
 class Network:
     """Gère les messages entre noeuds."""
@@ -167,89 +197,176 @@ class Network:
         self.env = env
         self.dht = dht
 
-    def deliver(self, message : Message):
+    def deliver(self, message: Message):
         """Livre un message au bon noeud."""
+        target_node = None
         for node in self.dht:
             if node.node_id == message.target_id:
                 target_node = node
-        #target_node = next((n for n in self.dht if n.node_id == target_id), None)
-        
+                break
+
         if target_node is None:
             print(bcolors.FAIL + f"[{self.env.now}] ERREUR : Noeud {message.target_id} introuvable dans la DHT. Message perdu." + bcolors.ENDC)
             return  # On arrête ici pour éviter un crash
 
         self.env.process(target_node.receive_message(message))
 
-class DHT : 
+def find_closest_node_above(value, dht):
+    """Trouve le nœud ayant un `node_id` juste supérieur ou le plus proche au-dessus.
+    Si `value` est supérieur à tous les `node_id`, retourne le plus petit (modulo logique).
+    """
+    if not dht:
+        return None  # Aucun nœud dans la DHT
+
+    possible_nodes = [node for node in dht if node.node_id >= value]
+
+    if possible_nodes:
+        return min(possible_nodes, key=lambda node: node.node_id)
+    else:
+        return min(dht, key=lambda node: node.node_id)
+
+class DHT:
     def __init__(self):
-        # Initialisation de la dht et de l'environnement
-        self.nb_node = 4 # Nombre de noeud à l'initialisation
-        self.id_size=12
+        self.nb_node = 4  # Nombre de noeuds à l'initialisation
+        self.id_size = 12
         self.env = simpy.Environment()
         self.test_neighbor = True
-        
-        # On créé un noeud de manière aléatoire
+        self.dht_data_store = []  # Liste qui contiendra la liste des données existantes
+
         n_init = Node(self.env, random.getrandbits(self.id_size), None, None)
-        
-        #Le premier noeud se prend lui même comme voisin
-        n_init.left_neighbor_id=n_init.node_id
-        n_init.right_neighbor_id=n_init.node_id
-        #print(n_init.node_id)
-        
+        n_init.left_neighbor_id = n_init.node_id
+        n_init.right_neighbor_id = n_init.node_id
+
         self.dht = [n_init]
         self.network = Network(self.env, self.dht)
         n_init.network = self.network
         n_init.dht = self.dht
 
     def add_new_node(self):
-        yield self.env.timeout(random.uniform(1, 5))  # Simule un délai avant l'arrivée du nœud
+        yield self.env.timeout(random.uniform(1, 5))
         new_node_id = random.getrandbits(self.id_size)
-        new_node = Node(self.env, new_node_id, self.network.dht, self.network)  # Correctement initialisé
+        new_node = Node(self.env, new_node_id, self.network.dht, self.network)
 
-        print(bcolors.OKGREEN + f"[{self.env.now}] Nouveau noeud {new_node_id} créé et tente de rejoindre la DHT." + bcolors.ENDC)
-        # Lancer le processus de connexion
-        rand = random.randint(0, len(self.network.dht)-1)
+        print(f"[{self.env.now}] Nouveau noeud {new_node_id} créé et tente de rejoindre la DHT.")
+        rand = random.randint(0, len(self.network.dht) - 1)
         target_id = self.network.dht[rand].node_id
-        #print(bcolors.WARNING + f"L'id du target est : {str(target_id)}" + bcolors.ENDC)
-        #target_id = random.choice([n.node_id for n in network.dht if n.node_id != new_node_id]) 
-        
+
         self.env.process(new_node.send_message(target_id, "JOIN_REQUEST", "JOIN_REQUEST"))
-        
-        # Ajouter le nouveau nœud à la liste DHT
         self.network.dht.append(new_node)
 
     def node_quit(self, node):
-        yield self.env.timeout(random.uniform(1, 5))  # Simule un délai avant le départ du nœud
-        print(bcolors.FAIL + f"[{self.env.now}] Noeud {node.node_id} tente de quitter le voisinage." + bcolors.ENDC)
+        yield self.env.timeout(random.uniform(1, 5))
+        print(f"[{self.env.now}] Noeud {node.node_id} tente de quitter le voisinage.")
 
+        # Check if the node has any data to transfer
+        if node.datas:
+            # Transfer data to neighbors before sending LEAVE_REQUEST
+            if node.left_neighbor_id is not None:
+                left_neighbor = next((n for n in self.dht if n.node_id == node.left_neighbor_id), None)
+                if left_neighbor:
+                    left_neighbor.datas.extend(node.datas)
+                    print(f"[{self.env.now}] Data from node {node.node_id} transferred to {left_neighbor.node_id}")
+                    print(f"[{self.env.now}] Transferred data IDs: {[data.id for data in node.datas]}")
+
+            if node.right_neighbor_id is not None:
+                right_neighbor = next((n for n in self.dht if n.node_id == node.right_neighbor_id), None)
+                if right_neighbor:
+                    right_neighbor.datas.extend(node.datas)
+                    print(f"[{self.env.now}] Data from node {node.node_id} transferred to {right_neighbor.node_id}")
+                    print(f"[{self.env.now}] Transferred data IDs: {[data.id for data in node.datas]}")
+
+        # Send LEAVE_REQUEST messages to neighbors
         self.env.process(node.send_message(node.left_neighbor_id, "LEAVE_REQUEST", node.right_neighbor_id))
         self.env.process(node.send_message(node.right_neighbor_id, "LEAVE_REQUEST", node.left_neighbor_id))
 
-    def creation_DHT(self):         
-        #Tant que j'ai des noeuds à ajouter, je les rajoute 
-        i=1
-        while len(self.network.dht) < self.nb_node : 
+        # Update DHT and storage after the node leaves
+        self.update_dht_and_storage(node, Message(node.node_id, None, "LEAVE_REQUEST", None))
+
+    def update_dht_and_storage(self, node, message):
+        """Met à jour la DHT et redistribue les données lorsqu'un nœud rejoint ou quitte la DHT."""
+        yield self.env.timeout(random.uniform(1, 5))
+        if message.type == "LEAVE_REQUEST":
+            self.dht.remove(node)
+            print(f"[{self.env.now}] Le nœud {node.node_id} a quitté la DHT et la structure a été mise à jour.")
+
+        elif message.type == "JOIN_REQUEST":
+            self.dht.append(node)
+            print(f"[{self.env.now}] Le nœud {node.node_id} a rejoint la DHT.")
+
+        # Réattribuer les données après le changement de la DHT
+        for n in self.dht:
+            for data in n.datas[:]:  # Copie pour éviter les modifications en boucle
+                closest_node = find_closest_node_above(data.id, self.dht)
+                if closest_node != n:
+                    closest_node.datas.append(data)
+                    n.datas.remove(data)
+                    print(f"[{self.env.now}] Data {data.id} déplacée vers {closest_node.node_id}")
+
+        # Update the dht_data_store
+        self.update_dht_data_store()
+
+    def creation_DHT(self):
+        while len(self.network.dht) < self.nb_node:
             self.env.process(self.add_new_node())
-            #On trie la DHT par ordre croissant des id des noeuds
             self.network.dht.sort(key=lambda node: node.node_id)
             self.env.run(until=self.env.now + 30)
-            i+=1
-        
-        # test voisinage
+
         if self.test_neighbor:
             for node in self.network.dht:
                 print(bcolors.WARNING + f"left id = {node.left_neighbor_id}" + bcolors.ENDC)
                 print(bcolors.WARNING + f"right id = {node.right_neighbor_id}" + bcolors.ENDC)
                 print(bcolors.WARNING + f"node id = {node.node_id}" + bcolors.ENDC)
                 print("______________________________________________")
-                
+
+    def create_and_store_data(self, num_data=5):
+        """Crée des données et les stocke dans la DHT."""
+        yield self.env.timeout(random.uniform(1, 5))
+        for _ in range(num_data):
+            yield self.env.timeout(random.uniform(1, 5))
+            data_id = random.getrandbits(self.id_size)
+            data = Data(data_id, self.dht, self.id_size)
+            print(f"[{self.env.now}] Donnée {data_id} insérée dans la DHT.")
+
+            # Update the dht_data_store
+            self.dht_data_store.append(data)
+
+    def update_dht_data_store(self):
+        """Met à jour la liste des données présentes dans la DHT."""
+        yield self.env.timeout(random.uniform(1, 5))
+        self.dht_data_store.clear()
+        for node in self.dht:
+            self.dht_data_store.extend(node.datas)
+
+    def display_data_in_dht(self):
+        """Affiche toutes les données présentes dans la DHT et où elles sont stockées."""
+        print("Liste des données présentes dans la DHT et leur emplacement :")
+        for node in self.dht:
+            if node.datas:
+                print(f"Noeud {node.node_id} contient les données : {[data.id for data in node.datas]}")
+            else:
+                print(f"Noeud {node.node_id} ne contient aucune donnée.")
+
+    def display_nodes_in_dht(self):
+        """Affiche tous les noeuds présents dans la DHT."""
+        print("Liste des noeuds présents dans la DHT :")
+        for node in self.dht:
+            print(f"Noeud ID: {node.node_id}, Voisin gauche: {node.left_neighbor_id}, Voisin droit: {node.right_neighbor_id}")
+
+    def run(self):
+        self.creation_DHT()
+        self.env.process(self.add_new_node())
+        self.env.process(self.create_and_store_data(5))
+
+        if self.dht:
+            quitting_node = random.choice(self.dht)
+            self.env.process(self.node_quit(quitting_node))
+
+        self.env.run(until=300)
+
+        # Display the data and nodes in the DHT at the end of the simulation
+        self.display_data_in_dht()
+        self.display_nodes_in_dht()
+
 if __name__ == "__main__":
     dht = DHT()
-    dht.creation_DHT()
-    dht.env.process(dht.add_new_node())
-    quitting_node = random.choice(dht.dht)
-    dht.env.process(dht.node_quit(quitting_node))
-    dht.env.run(until=300)
-        
-
-
+    dht.run()
