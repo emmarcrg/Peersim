@@ -41,15 +41,15 @@ class Node:
         yield self.env.timeout(random.uniform(1, 2))  # Simulation du temps de traitement
 
         print(f"[{self.env.now}] Noeud {self.node_id} reçoit '{message.body}' de Noeud {message.sender_id}")
-        if message.type == "JOIN_REQUEST": # Si requete d'insertion, lancement procédure insertion
+        if message.type == "JOIN_REQUEST": # Si requête d'insertion, lancement procédure insertion
             self.env.process(self.find_position(message.sender_id))
 
-        elif message.type == "JOIN_REQUEST_FOLLOW_UP": # Si requete d'insertion suivie, lancement procédure insertion
+        elif message.type == "JOIN_REQUEST_FOLLOW_UP": # Si requête d'insertion suivie, lancement procédure insertion
             self.env.process(self.find_position(message.body))
 
         elif message.type == "POSITION_FOUND":
             self.dht = self.network.dht  # On récupère la DHT depuis le réseau
-            # Le corps du message va contenir un liste avec les nouveaux voisins du nouveau noeud
+            # Le corps du message va contenir une liste avec les nouveaux voisins du nouveau noeud
             self.right_neighbor_id = message.body[0]
             self.left_neighbor_id = message.body[1]
             self.env.process(self.send_message(self.right_neighbor_id, "NEIGHBOR_REQUEST", "left"))
@@ -137,7 +137,7 @@ class Node:
             yield self.env.timeout(random.uniform(1, 3))  # Délai avant de rejoindre la DHT
 
             if not self.network.dht:
-                return  # Eviter de continuer si aucun nœud n'est disponible
+                return  # Éviter de continuer si aucun nœud n'est disponible
             rand = random.randint(0, len(self.network.dht)-1)
             target_id = self.network.dht[rand].node_id
 
@@ -245,7 +245,6 @@ class DHT:
         n_init = Node(self.env, random.getrandbits(self.id_size), None, None)
         n_init.left_neighbor_id = n_init.node_id
         n_init.right_neighbor_id = n_init.node_id
-        n_init.data_store = []
 
         self.dht = [n_init]
         self.network = Network(self.env, self.dht)
@@ -256,7 +255,6 @@ class DHT:
         yield self.env.timeout(random.uniform(1, 5))
         new_node_id = random.getrandbits(self.id_size)
         new_node = Node(self.env, new_node_id, self.network.dht, self.network)
-        new_node.data_store = []
 
         print(f"[{self.env.now}] Nouveau noeud {new_node_id} créé et tente de rejoindre la DHT.")
         rand = random.randint(0, len(self.network.dht) - 1)
