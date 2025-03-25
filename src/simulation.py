@@ -168,7 +168,7 @@ class Data:
 
         if self.closest_node:
             self.store_on_responsible_and_neighbors()
-            print(f"Data {self.id} stockée sur {self.closest_node.node_id}, {self.closest_node.left_neighbor_id}, {self.closest_node.right_neighbor_id}")
+            print(f"[{self.closest_node.env.now}] Data {self.id} stockée sur {self.closest_node.node_id}, {self.closest_node.left_neighbor_id}, {self.closest_node.right_neighbor_id}")
 
     def calculate_closest_node(self, dht):
         """Trouve le nœud le plus proche au-dessus."""
@@ -284,6 +284,7 @@ class DHT:
 
     def update_dht_and_storage(self, node, message):
         """Met à jour la DHT et redistribue les données lorsqu'un nœud rejoint ou quitte la DHT."""
+        yield self.env.timeout(random.uniform(1, 5))
         if message.type == "LEAVE_REQUEST":
             self.dht.remove(node)
             print(f"[{self.env.now}] Le nœud {node.node_id} a quitté la DHT et la structure a été mise à jour.")
@@ -319,6 +320,7 @@ class DHT:
 
     def create_and_store_data(self, num_data=5):
         """Crée des données et les stocke dans la DHT."""
+        yield self.env.timeout(random.uniform(1, 5))
         for _ in range(num_data):
             yield self.env.timeout(random.uniform(1, 5))
             data_id = random.getrandbits(self.id_size)
@@ -330,6 +332,7 @@ class DHT:
 
     def update_dht_data_store(self):
         """Met à jour la liste des données présentes dans la DHT."""
+        yield self.env.timeout(random.uniform(1, 5))
         self.dht_data_store.clear()
         for node in self.dht:
             self.dht_data_store.extend(node.datas)
