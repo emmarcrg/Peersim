@@ -240,6 +240,7 @@ class DHT:
         self.id_size = 12
         self.env = simpy.Environment()
         self.test_neighbor = True
+        self.dht_data_store = []  # Liste qui contiendra la liste des données existantes
 
         n_init = Node(self.env, random.getrandbits(self.id_size), None, None)
         n_init.left_neighbor_id = n_init.node_id
@@ -311,6 +312,9 @@ class DHT:
                     n.datas.remove(data)
                     print(f"[{self.env.now}] Data {data.id} déplacée vers {closest_node.node_id}")
 
+        # Update the dht_data_store
+        self.update_dht_data_store()
+
     def creation_DHT(self):
         while len(self.network.dht) < self.nb_node:
             self.env.process(self.add_new_node())
@@ -332,14 +336,29 @@ class DHT:
             data = Data(data_id, self.dht, self.id_size)
             print(f"[{self.env.now}] Donnée {data_id} insérée dans la DHT.")
 
+            # Update the dht_data_store
+            self.dht_data_store.append(data)
+
+    def update_dht_data_store(self):
+        """Met à jour la liste des données présentes dans la DHT."""
+        self.dht_data_store.clear()
+        for node in self.dht:
+            self.dht_data_store.extend(node.datas)
+
     def display_data_in_dht(self):
-        """Affiche toutes les données présentes dans la DHT."""
-        print("Liste des données présentes dans la DHT :")
+        """Affiche toutes les données présentes dans la DHT et où elles sont stockées."""
+        print("Liste des données présentes dans la DHT et leur emplacement :")
         for node in self.dht:
             if node.datas:
                 print(f"Noeud {node.node_id} contient les données : {[data.id for data in node.datas]}")
             else:
                 print(f"Noeud {node.node_id} ne contient aucune donnée.")
+
+    def display_nodes_in_dht(self):
+        """Affiche tous les noeuds présents dans la DHT."""
+        print("Liste des noeuds présents dans la DHT :")
+        for node in self.dht:
+            print(f"Noeud ID: {node.node_id}, Voisin gauche: {node.left_neighbor_id}, Voisin droit: {node.right_neighbor_id}")
 
     def run(self):
         self.creation_DHT()
@@ -352,8 +371,9 @@ class DHT:
 
         self.env.run(until=300)
 
-        # Display the data in the DHT at the end of the simulation
+        # Display the data and nodes in the DHT at the end of the simulation
         self.display_data_in_dht()
+        self.display_nodes_in_dht()
 
 if __name__ == "__main__":
     dht = DHT()
