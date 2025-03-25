@@ -1,6 +1,18 @@
 import simpy
 import random
 
+class bcolors:
+        #   print(bcolors.HEADER + "------" + bcolors.ENDC)
+        HEADER = '\033[95m' # violet
+        OKBLUE = '\033[94m' # dark blue
+        OKCYAN = '\033[96m' # cyan
+        OKGREEN = '\033[92m'   # green
+        WARNING = '\033[93m'    # yellow
+        FAIL = '\033[91m'   # red
+        ENDC = '\033[0m'    # white
+        BOLD = '\033[1m'    # bold
+        UNDERLINE = '\033[4m' # underline
+
 class Message: 
     def __init__(self, sender_id, target_id, type, body):
         self.sender_id = sender_id
@@ -29,15 +41,15 @@ class Node:
         latency = random.uniform(1, 3)  # Simulation d'un délai réseau
         yield self.env.timeout(latency)
 
-        print(f"[{self.env.now}] Noeud {self.node_id} envoie '{message.body}' à Noeud {message.target_id}")
+        print(bcolors.OKCYAN + f"[{self.env.now}] Noeud {self.node_id} envoie '{message.body}' à Noeud {message.target_id}" + bcolors.ENDC)
         self.network.deliver(message)  # Remettre le message au réseau
 
 
     def receive_message(self, message : Message):
         """Réception d'un message et réponse après traitement."""
         yield self.env.timeout(random.uniform(1, 2))  # Simulation du temps de traitement
-        
-        print(f"[{self.env.now}] Noeud {self.node_id} reçoie '{message.body}' de Noeud {message.sender_id}")
+        print(bcolors.OKBLUE + f"[{self.env.now}] Noeud {self.node_id} reçoie '{message.body}' de Noeud {message.sender_id}" + bcolors.ENDC)
+
         if message.type == "JOIN_REQUEST": # Si requete d'insertion, lancement procédure insertion
             self.env.process(self.find_position(message.sender_id))
         
@@ -51,28 +63,27 @@ class Node:
             self.right_neighbor_id = message.body[0]
             self.left_neighbor_id = message.body[1]
             self.env.process(self.send_message(self.right_neighbor_id, "NEIGHBOR_REQUEST", "left"))
-            print(f"[{self.env.now}] Noeud {self.node_id} s'est inséré entre {self.right_neighbor_id} et {self.left_neighbor_id}")
+            print(bcolors.OKGREEN + f"[{self.env.now}] Noeud {self.node_id} s'est inséré entre {self.right_neighbor_id} et {self.left_neighbor_id}" + bcolors.ENDC)
 
         elif message.type == "NEIGHBOR_REQUEST": # Message venant de nouveaux noeuds voulant s'insérer
             if message.body == "left":
                 self.left_neighbor_id = message.sender_id
             if message.body == "right":
                 self.right_neighbor_id = message.sender_id
-
-            print(f"[{self.env.now}] Noeud {self.node_id} a comme nouveau voisin {message.body} {message.sender_id}")
+            print(bcolors.HEADER + f"[{self.env.now}] Noeud {self.node_id} a comme nouveau voisin {message.body} {message.sender_id}" + bcolors.ENDC)
         
         elif message.type == "LEAVE_REQUEST": # Message venant de noeuds voulant quitter
             with self.lock.request() as req:  # Verrouiller la section où on modifie les voisins
                             yield req
                             if message.sender_id == self.left_neighbor_id:
                                 self.left_neighbor_id = message.body
-                                print(f"[{self.env.now}] Noeud {self.node_id} a comme nouveau voisin gauche {self.left_neighbor_id}")
+                                print(bcolors.HEADER + f"[{self.env.now}] Noeud {self.node_id} a comme nouveau voisin gauche {self.left_neighbor_id}" + bcolors.ENDC)
 
                             elif message.sender_id == self.right_neighbor_id:
                                 self.right_neighbor_id = message.body
-                                print(f"[{self.env.now}] Noeud {self.node_id} a comme nouveau voisin droit {self.right_neighbor_id}")
-
-                            print(f"[{self.env.now}] Noeud {message.sender_id} a quitté")
+                                print(bcolors.HEADER + f"[{self.env.now}] Noeud {self.node_id} a comme nouveau voisin droit {self.right_neighbor_id}" + bcolors.ENDC)
+                            
+                            print(bcolors.FAIL + f"[{self.env.now}] Noeud {message.sender_id} a quitté" + bcolors.ENDC)
         
 
         elif message.type == "NORMAL_MESSAGE": # Si c'est un msg pas important
@@ -80,7 +91,7 @@ class Node:
             #print(f"[{self.env.now}] Noeud {self.node_id} reçoit '{message}' de Noeud {sender_id}")
             #self.env.process(self.send_message(message.sender_id, "NORMAL_MESSAGE", f"Réponse à '{message.sender_id}', salut"))  # Réponse
         else:
-            print(f"[{self.env.now}] Noeud {self.node_id} a reçu un message inconnu : {message}")
+            print(bcolors.WARNING + f"[{self.env.now}] Noeud {self.node_id} a reçu un message inconnu : {message}" + bcolors.ENDC)
 
 
     def find_position(self, new_node_id):
@@ -90,28 +101,28 @@ class Node:
         # Vérifier la position et sécuriser l'accès aux voisins avec un verrou
         with self.lock.request() as req:
             yield req
-            print(f"new node id = {new_node_id}")
+            #print(f"new node id = {new_node_id}")
             
             #Condition initialisation : il n'y a qu'un noeud 
             if len(self.network.dht)==2:
                 found = True 
-                print("Condition initialisation : il n'y a qu'un noeud ")  
+                print(bcolors.WARNING + f"Condition initialisation : il n'y a qu'un noeud" + bcolors.ENDC)
             
             # Conditions pour déterminer la bonne position
             if self.node_id < new_node_id and new_node_id < self.right_neighbor_id:
                 found = True
-                print("Condition 1 : Cas courant")
+                print(bcolors.WARNING + f"Condition 1 : Cas courant" + bcolors.ENDC)
 
             if self.node_id > self.right_neighbor_id and new_node_id < self.right_neighbor_id:
                 found = True
-                print("Condition 2 : nouveaux noeud est le plus petit")
+                print(bcolors.WARNING + f"Condition 2 : nouveaux noeud est le plus petit" + bcolors.ENDC)
 
             if self.node_id < new_node_id and  self.right_neighbor_id < new_node_id and self.node_id > self.right_neighbor_id:
                 found = True
-                print("Condition 3 : nouveaux noeud est le plus grand")
+                print(bcolors.WARNING + f"Condition 3 : nouveaux noeud est le plus grand" + bcolors.ENDC)
 
             if found:
-                print("found")
+                print(bcolors.WARNING + f"found" + bcolors.ENDC)
                 if len(self.network.dht)==2:
                     yield self.env.process(self.send_message(new_node_id, "POSITION_FOUND", [self.right_neighbor_id, self.right_neighbor_id]))
                     #Ce n'est pas très beau mais il faut mettre à jour les voisins du noeud initial
@@ -119,9 +130,9 @@ class Node:
                 else:
                     yield self.env.process(self.send_message(new_node_id, "POSITION_FOUND", [self.right_neighbor_id, self.node_id]))
                     self.right_neighbor_id = new_node_id
-                    print(f"[{self.env.now}] Noeud {self.node_id} a comme nouveau voisin droit {self.right_neighbor_id}")
+                    print(bcolors.HEADER + f"[{self.env.now}] Noeud {self.node_id} a comme nouveau voisin droit {self.right_neighbor_id}" + bcolors.ENDC)
             else:  # Si la position n'est pas bonne
-                print("not found")
+                print(bcolors.WARNING + f"not found" + bcolors.ENDC)
                 yield self.env.process(self.send_message(self.right_neighbor_id, "JOIN_REQUEST_FOLLOW_UP", new_node_id))
 
         
@@ -136,7 +147,7 @@ class Node:
             rand = random.randint(0, len(self.network.dht)-1)
             target_id = self.network.dht[rand].node_id
 
-            print("L'id du target est : " + str(target_id))
+            print(bcolors.WARNING + f"L'id du target est : {str(target_id)}" + bcolors.ENDC)
             #target_id = random.choice([n.node_id for n in self.network.dht])  
             self.env.process(self.send_message(target_id, "JOIN_REQUEST", "JOIN_REQUEST"))
         else:
@@ -164,7 +175,7 @@ class Network:
         #target_node = next((n for n in self.dht if n.node_id == target_id), None)
         
         if target_node is None:
-            print(f"[{self.env.now}] ERREUR : Noeud {message.target_id} introuvable dans la DHT. Message perdu.")
+            print(bcolors.FAIL + f"[{self.env.now}] ERREUR : Noeud {message.target_id} introuvable dans la DHT. Message perdu." + bcolors.ENDC)
             return  # On arrête ici pour éviter un crash
 
         self.env.process(target_node.receive_message(message))
@@ -183,7 +194,7 @@ class DHT :
         #Le premier noeud se prend lui même comme voisin
         n_init.left_neighbor_id=n_init.node_id
         n_init.right_neighbor_id=n_init.node_id
-        print(n_init.node_id)
+        #print(n_init.node_id)
         
         self.dht = [n_init]
         self.network = Network(self.env, self.dht)
@@ -195,12 +206,11 @@ class DHT :
         new_node_id = random.getrandbits(self.id_size)
         new_node = Node(self.env, new_node_id, self.network.dht, self.network)  # Correctement initialisé
 
-        print(f"[{self.env.now}] Nouveau noeud {new_node_id} créé et tente de rejoindre la DHT.")       
-
+        print(bcolors.OKGREEN + f"[{self.env.now}] Nouveau noeud {new_node_id} créé et tente de rejoindre la DHT." + bcolors.ENDC)
         # Lancer le processus de connexion
         rand = random.randint(0, len(self.network.dht)-1)
         target_id = self.network.dht[rand].node_id
-        print("L'id du target est : " + str(target_id))
+        #print(bcolors.WARNING + f"L'id du target est : {str(target_id)}" + bcolors.ENDC)
         #target_id = random.choice([n.node_id for n in network.dht if n.node_id != new_node_id]) 
         
         self.env.process(new_node.send_message(target_id, "JOIN_REQUEST", "JOIN_REQUEST"))
@@ -210,7 +220,7 @@ class DHT :
 
     def node_quit(self, node):
         yield self.env.timeout(random.uniform(1, 5))  # Simule un délai avant le départ du nœud
-        print(f"[{self.env.now}] Noeud {node.node_id} tente de quitter le voisinage.")
+        print(bcolors.FAIL + f"[{self.env.now}] Noeud {node.node_id} tente de quitter le voisinage." + bcolors.ENDC)
 
         self.env.process(node.send_message(node.left_neighbor_id, "LEAVE_REQUEST", node.right_neighbor_id))
         self.env.process(node.send_message(node.right_neighbor_id, "LEAVE_REQUEST", node.left_neighbor_id))
@@ -228,9 +238,9 @@ class DHT :
         # test voisinage
         if self.test_neighbor:
             for node in self.network.dht:
-                print(f"node id = {node.node_id}")
-                print(f"right id = {node.right_neighbor_id}")
-                print(f"left id = {node.left_neighbor_id}")
+                print(bcolors.WARNING + f"left id = {node.left_neighbor_id}" + bcolors.ENDC)
+                print(bcolors.WARNING + f"right id = {node.right_neighbor_id}" + bcolors.ENDC)
+                print(bcolors.WARNING + f"node id = {node.node_id}" + bcolors.ENDC)
                 print("______________________________________________")
                 
 if __name__ == "__main__":
